@@ -15,6 +15,19 @@ python3 -m http.server 8080      # then open http://localhost:8080
 - `?seed=123` fixes the run seed. Wave compositions never change; the seed only varies doctrine offers and which letters are forged.
 - `?debug` adds the tuning panel: speed up to 8x, extra gold/ale/Resolve, invincibility, jump to any wave, spawn any enemy, an autoplay bot, per-tower DPS over the last 10s, a leak log, a 300-enemy stress test, and an FPS/frame-time readout. A run that uses any debug cheat isn't recorded in the Ledger.
 
+## Playing on a phone or tablet
+
+Touch controls switch on automatically on phones and tablets (mobile Safari and Chrome). To force them on a desktop browser, add `?touch` to the URL. Landscape works best; portrait works too.
+
+- **Build:** tap a tower in the build bar, tap open land to preview it with its range, then tap the same spot again (or press ✓) to build.
+- **Upgrade or sell:** tap a built tower. Its panel opens with the upgrade, targeting and sell buttons.
+- **Inspect an enemy:** tap it or long-press it.
+- **Zoom:** pinch, or double-tap empty ground. Drag with one finger to pan. ⤢ resets the view.
+- **Panels:** ☰ opens the drawer with the Tower, Kings, Bonds, Letter and Log tabs. In portrait the panels sit below the map instead.
+- **Jagerbauhm's barricade:** tap the road to preview it, then ✓.
+- **Fullscreen:** "Add to Home Screen" launches it fullscreen. On Android Chrome the ⛶ button also works.
+- **Auto-pause:** the siege pauses when you lock the phone or switch apps.
+
 ## How it plays
 
 - **Resolve (20):** your life total. It never regenerates. Most leaks cost 1–3. If Plinket reaches the keep, the run is over.
@@ -73,7 +86,8 @@ python3 -m http.server 8080      # then open http://localhost:8080
 node tools/sim.mjs                              # every build in tools/builds/, one seed, per-wave table
 node tools/sim.mjs --seeds=8                    # spread across seeds
 node tools/sim.mjs tools/builds/balanced.json --mandates=zeal,oweBlock --unlock-all
-node tools/browser-test.mjs                     # Playwright smoke test and screenshots (needs `playwright`)
+node tools/browser-test.mjs                     # desktop Playwright smoke test and screenshots (needs `playwright`)
+node tools/mobile-test.mjs                      # touch test: emulated iPhone 13 (landscape) and Pixel 7 (portrait)
 ```
 
 The simulator runs the same `World` as the browser, headless, with a scripted bot (`src/core/bot.js`). Each build is a JSON policy: an ordered build/upgrade plan, a gold reserve, which waves to issue bonds on, and doctrine preferences.
@@ -102,7 +116,7 @@ Economy constants are at the top of `src/core/world.js`.
 index.html, style.css
 src/core/   world.js (the whole simulation, DOM-free), map.js, spatial.js, rng.js, bot.js
 src/data/   towers, enemies, waves, doctrines, mandates, kings, lore
-src/ui/     main.js (loop + input), render.js (canvas), hud.js, screens.js, meta.js (Ledger), debug.js
+src/ui/     main.js (loop + input), touch.js (gestures), render.js (canvas + camera), hud.js, screens.js, meta.js (Ledger), debug.js
 tools/      sim.mjs, browser-test.mjs, builds/*.json
 ```
 

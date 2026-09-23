@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#120e0a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Aleforge">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
   <title>Siege of Aleforge</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -16,6 +24,10 @@
       <div class="res small"><span class="lbl">Next payout</span><b id="r-income">—</b></div>
       <div id="morale"></div>
       <div class="spacer"></div>
+      <button id="b-fit" title="Reset zoom (pinch, wheel or double-tap to zoom)">⤢</button>
+      <button id="b-full" class="touch-only" title="Fullscreen">⛶</button>
+      <button id="b-help" title="How it works (H)">?</button>
+      <button id="b-drawer" class="touch-only" title="Panels">☰</button>
       <button id="b-speed" title="Speed (F)">1×</button>
       <button id="b-pause" title="Pause (P)">Pause</button>
       <button id="b-send" class="primary" title="Send next wave (Space)">Send Wave</button>
@@ -24,17 +36,26 @@
       <div id="stage">
         <canvas id="game" width="1280" height="720"></canvas>
         <div id="banner"></div>
+        <div id="confirm" class="hidden">
+          <span id="confirm-text"></span>
+          <button id="b-confirm" class="primary">✓ Build</button>
+          <button id="b-cancel">✕</button>
+        </div>
       </div>
       <aside id="side">
-        <section id="p-info"></section>
-        <section id="p-kings"><h3>Liquor Kings</h3><div id="kings"></div></section>
-        <section id="p-bonds"><h3>Aleforge Bonds</h3><div id="bonds"></div></section>
-        <section id="p-letter"><h3>Intercepted Correspondence</h3><div id="letter"></div></section>
-        <section id="p-log"><h3>The Chancellor's Notes</h3><div id="log"></div></section>
+        <nav id="side-tabs" class="touch-only">
+          <button data-tab="info" class="on">Tower</button><button data-tab="kings">Kings</button><button data-tab="bonds">Bonds</button><button data-tab="letter">Letter</button><button data-tab="log">Log</button><button id="b-drawer-close" title="Close">✕</button>
+        </nav>
+        <section id="p-info" data-panel="info"></section>
+        <section id="p-kings" data-panel="kings"><h3>Liquor Kings</h3><div id="kings"></div></section>
+        <section id="p-bonds" data-panel="bonds"><h3>Aleforge Bonds</h3><div id="bonds"></div></section>
+        <section id="p-letter" data-panel="letter"><h3>Intercepted Correspondence</h3><div id="letter"></div></section>
+        <section id="p-log" data-panel="log"><h3>The Chancellor's Notes</h3><div id="log"></div></section>
       </aside>
     </main>
     <footer id="buildbar"></footer>
   </div>
+  <div id="rotate" class="touch-only"><span>Turn your phone sideways for the best view of the siege.</span><button id="rotate-dismiss">OK</button></div>
   <div id="modal" class="hidden"></div>
   <div id="debug" class="hidden"></div>
   <script type="module" src="src/ui/main.js"></script>

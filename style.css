@@ -4,10 +4,14 @@
   font-family: Georgia, 'Times New Roman', serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+html, body {
+  margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+  overscroll-behavior: none; -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+}
 button {
   font: inherit; color: var(--ink); background: var(--panel2); border: 1px solid var(--line);
   padding: 5px 10px; cursor: pointer; border-radius: 3px;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
 }
 button:hover:not(:disabled) { border-color: var(--gold); }
 button:disabled { opacity: 0.45; cursor: default; }
@@ -15,9 +19,13 @@ button.primary { background: #5a2a14; border-color: #8a4a24; font-weight: bold; 
 button.on { border-color: var(--gold); color: var(--gold); }
 h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 .hidden { display: none !important; }
+body:not(.touch) .touch-only { display: none !important; }
 
-#app { display: flex; flex-direction: column; height: 100vh; }
-#topbar { display: flex; align-items: center; gap: 14px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#app {
+  display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+#topbar { display: flex; align-items: center; gap: 14px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
 #topbar .res { display: flex; flex-direction: column; line-height: 1.1; min-width: 56px; }
 #topbar .res b { font-size: 18px; }
 #topbar .res.small b { font-size: 13px; color: var(--dim); font-weight: normal; }
@@ -31,15 +39,28 @@ h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: 0.12em; text-transform: u
 .mbar .thresh { position: absolute; top: -2px; bottom: -2px; width: 1px; background: #fff8; }
 .spacer { flex: 1; }
 
-main { flex: 1; display: flex; min-height: 0; }
-#stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; background: #0b0907; }
-#game { max-width: 100%; max-height: 100%; aspect-ratio: 16 / 9; image-rendering: auto; cursor: crosshair; }
+main { flex: 1; display: flex; min-height: 0; min-width: 0; }
+#stage { flex: 1; position: relative; min-width: 0; min-height: 0; background: #0b0907; overflow: hidden; }
+#game { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#confirm {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  background: rgba(29,23,18,0.95); border: 1px solid #5a4630; border-radius: 6px; padding: 6px 8px; max-width: calc(100% - 20px);
+  box-shadow: 0 4px 16px #000; font-size: 13px; z-index: 3;
+}
+#confirm span { flex: 1; min-width: 0; }
+#side-tabs { display: flex; gap: 4px; position: sticky; top: -10px; background: var(--panel); padding: 4px 0 6px; margin-top: -4px; z-index: 1; }
+#side-tabs button { flex: 1; font-size: 12px; padding: 6px 2px; min-width: 0; }
+#side-tabs #b-drawer-close { flex: 0 0 40px; }
+#rotate { position: fixed; left: 10px; right: 10px; top: calc(10px + env(safe-area-inset-top)); z-index: 20; display: flex; gap: 10px; align-items: center;
+  background: #5a2a14; border: 1px solid #8a4a24; border-radius: 6px; padding: 10px 12px; font-size: 14px; box-shadow: 0 4px 16px #000; }
+#rotate span { flex: 1; }
+@media (orientation: landscape) { #rotate { display: none !important; } }
 #banner {
   position: absolute; top: 40%; left: 0; right: 0; text-align: center; pointer-events: none;
   font-size: 34px; letter-spacing: 0.08em; color: var(--pink); text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity 0.4s;
 }
 #banner.show { opacity: 1; }
-#side { width: 330px; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+#side { width: 330px; overflow-y: auto; overflow-x: hidden; background: var(--panel); border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 #side section { border-bottom: 1px solid var(--line); padding-bottom: 10px; }
 #side .row { display: flex; justify-content: space-between; gap: 6px; }
 #side .muted, .muted { color: var(--dim); }
@@ -65,11 +86,12 @@ main { flex: 1; display: flex; min-height: 0; }
 #buildbar { display: flex; gap: 6px; padding: 6px 10px; background: var(--panel); border-top: 1px solid var(--line); overflow-x: auto; }
 .tb { display: flex; flex-direction: column; align-items: flex-start; min-width: 118px; font-size: 12px; padding: 5px 8px; }
 .tb .tname { font-weight: bold; }
+.tb .tshort { display: none; font-weight: bold; }
 .tb .tcost { color: var(--gold); font-size: 11px; }
 .tb .key { color: var(--dim); font-size: 10px; }
 
 #modal { position: fixed; inset: 0; background: rgba(8,6,4,0.86); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
-.card { background: var(--panel); border: 1px solid #5a4630; max-width: 860px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 22px 26px; border-radius: 4px; box-shadow: 0 10px 40px #000; }
+.card { background: var(--panel); border: 1px solid #5a4630; max-width: 860px; width: 100%; max-height: 92vh; max-height: 92dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 22px 26px; border-radius: 4px; box-shadow: 0 10px 40px #000; }
 .card h1 { margin: 0; font-size: 40px; letter-spacing: 0.04em; color: var(--gold); }
 .card h2 { margin: 0 0 10px; color: var(--gold); }
 .card .sub { color: var(--pink); letter-spacing: 0.2em; font-size: 12px; text-transform: uppercase; margin-bottom: 14px; }
@@ -92,3 +114,78 @@ kbd { background: #000; border: 1px solid var(--line); padding: 0 4px; border-ra
 #debug button { font: 11px monospace; padding: 2px 5px; margin: 1px; }
 #debug table { width: 100%; border-collapse: collapse; }
 #debug td { padding: 1px 3px; }
+
+/* ------------------------------------------------------------------ touch / phones */
+body.touch button { min-height: 40px; font-size: 14px; }
+body.touch #topbar { gap: 8px; padding: 4px 8px; }
+body.touch #topbar button { min-width: 40px; padding: 4px 8px; }
+body.touch #side {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 88vw); z-index: 8;
+  padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) 10px;
+  transform: translateX(105%); transition: transform 0.2s ease; box-shadow: -8px 0 24px #000;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+body.touch.drawer-open #side { transform: none; }
+body.touch:not(.drawer-open) #side { pointer-events: none; } /* a closing drawer mustn't eat map touches */
+body.touch #side section[data-panel] { display: none; border: 0; }
+body.touch #side section[data-panel].active { display: block; }
+body.touch #b-drawer { font-size: 18px; }
+body.touch #buildbar { padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+body.touch #buildbar::-webkit-scrollbar { display: none; }
+body.touch .tb { min-width: 76px; min-height: 48px; padding: 4px 8px; }
+body.touch .tb .tname { display: none; }
+body.touch .tb .tshort { display: block; font-size: 14px; }
+body.touch .branch button, body.touch .modes button { min-height: 40px; }
+body.touch .card { padding: 16px 18px; }
+body.touch .actions { position: sticky; bottom: -16px; background: var(--panel); padding: 10px 0; margin-bottom: -16px; }
+body.touch .actions button { min-height: 44px; }
+body.touch .choice { padding: 12px; }
+body.touch #debug { top: calc(56px + env(safe-area-inset-top)); bottom: auto; width: 250px; max-height: 45vh; font-size: 10px; }
+body.touch input, body.touch select { font-size: 16px; } /* stops iOS focus-zoom */
+
+/* short landscape phones: slim top bar, build column on the left, map gets the rest */
+@media (max-height: 500px) {
+  #topbar { gap: 8px; padding: 2px 8px; flex-wrap: nowrap; overflow: hidden; }
+  #topbar .res { min-width: 0; }
+  #topbar .res b { font-size: 14px; }
+  #topbar .lbl { font-size: 8px; letter-spacing: 0.05em; }
+  #topbar .res.small { display: none; }
+  #topbar button { min-height: 30px !important; font-size: 13px !important; padding: 2px 8px; }
+  #morale { gap: 5px; min-width: 0; }
+  .mbar { width: 42px; font-size: 8px; }
+  .card h1 { font-size: 26px; }
+  .card p { margin: 6px 0; }
+  .help { columns: 1; }
+  #banner { font-size: 22px; }
+  body.touch #app {
+    display: grid; grid-template-columns: 92px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "top top" "build main";
+  }
+  body.touch #topbar { grid-area: top; }
+  body.touch main { grid-area: main; }
+  body.touch #buildbar {
+    grid-area: build; flex-direction: column; overflow-x: hidden; overflow-y: auto; gap: 4px;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); border-top: 0; border-right: 1px solid var(--line);
+  }
+  body.touch .tb { min-width: 0; width: 100%; min-height: 44px; padding: 3px 6px; flex: 0 0 auto; }
+  body.touch .tb .tcost { font-size: 10px; }
+}
+/* narrow screens: portrait phones */
+@media (max-width: 700px) {
+  #topbar { flex-wrap: wrap; row-gap: 4px; }
+  #topbar .res.small { display: none; }
+  #morale { order: 10; width: 100%; justify-content: space-between; }
+  .mbar { flex: 1; width: auto; }
+  /* portrait has room to spare: map on top, panels inline below it, build bar at the bottom */
+  body.touch main { flex-direction: column; }
+  body.touch #stage { flex: 0 0 auto; aspect-ratio: 16 / 9; width: 100%; }
+  body.touch #side {
+    position: static; transform: none; pointer-events: auto; width: auto; flex: 1; min-height: 0;
+    box-shadow: none; border-left: 0; border-top: 1px solid var(--line); padding: 8px 10px;
+  }
+  body.touch #b-drawer, body.touch #b-drawer-close { display: none; }
+  body.touch #topbar button { min-height: 34px; padding: 2px 8px; }
+  .help { columns: 1; }
+  .card h1 { font-size: 28px; }
+  #banner { font-size: 20px; }
+}

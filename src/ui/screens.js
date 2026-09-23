@@ -45,22 +45,30 @@ export function setupScreen(app) {
         <div class="cname">${ok ? '' : '🔒 '}${esc(k.name)}</div><div class="muted" style="font-size:12px">“${esc(k.title)}”</div>
         <div class="ctext"><b>${esc(k.ability)}</b> (${k.ale} ale${k.cd ? `, ${k.cd}s cooldown` : ''}): ${esc(k.text)}</div></div>`;
     }).join('')}</div>
-    ${un.mandates ? `<h2 style="margin-top:14px">Plinket's Mandates <span class="muted" style="font-size:14px">heat ${mand.size} · best cleared: ${app.meta.maxHeatWon}</span></h2>
+    ${un.mandates ? `<h2 style="margin-top:14px">Plinket's Mandates <span class="muted" style="font-size:14px">heat <span id="heat">${mand.size}</span> · best cleared: ${app.meta.maxHeatWon}</span></h2>
       <div class="choices">${Object.entries(MANDATES).map(([id, md]) => `<div class="choice ${mand.has(id) ? 'sel' : ''}" data-mand="${id}">
         <div class="cname">${esc(md.name)}</div><div class="ctext">${esc(md.text)}</div>${md.flavor ? `<div class="cflav">${esc(md.flavor)}</div>` : ''}</div>`).join('')}</div>`
       : '<p class="muted">Defeat Susan Plinket to unlock Plinket\'s Mandates (heat levels).</p>'}
     <div class="actions"><button class="primary" id="go" ${chosen.size === 2 ? '' : 'disabled'}>March to the Walls</button><button id="back">Back</button></div>`, (el) => {
+    // update in place (a full re-render would jump a phone back to the top of the list)
+    const sync = () => {
+      el.querySelectorAll('[data-king]').forEach((c) => c.classList.toggle('sel', chosen.has(c.dataset.king)));
+      el.querySelectorAll('[data-mand]').forEach((c) => c.classList.toggle('sel', mand.has(c.dataset.mand)));
+      el.querySelector('#go').disabled = chosen.size !== 2;
+      const heat = el.querySelector('#heat');
+      if (heat) heat.textContent = mand.size;
+    };
     el.querySelectorAll('[data-king]').forEach((c) => {
       c.onclick = () => {
         const id = c.dataset.king;
         if (!un.kings.includes(id)) return;
         if (chosen.has(id)) chosen.delete(id);
         else if (chosen.size < 2) chosen.add(id);
-        render();
+        sync();
       };
     });
     el.querySelectorAll('[data-mand]').forEach((c) => {
-      c.onclick = () => { const id = c.dataset.mand; mand.has(id) ? mand.delete(id) : mand.add(id); render(); };
+      c.onclick = () => { const id = c.dataset.mand; mand.has(id) ? mand.delete(id) : mand.add(id); sync(); };
     });
     el.querySelector('#go').onclick = () => { hide(); app.startRun([...chosen], [...mand]); };
     el.querySelector('#back').onclick = () => titleScreen(app);
@@ -129,7 +137,8 @@ export function helpScreen(app) {
     <p><b>Infiltrators</b> are invisible until a Lighthouse or Sheriff's Deputies reveals them. Unseen, they sabotage the towers they pass.</p>
     <p><b>Temperance Matrons</b> sober nearby towers: every buff is stripped and ale towers fire at half speed. <b>Martyrs</b> disable nearby towers when they die. <b>True Believers</b> cleanse slows and burns at half HP.</p>
     <p><b>Doctrines</b> every 5 waves: pick one of three trades. None is free.</p>
-    <p><b>Keys:</b> <kbd>1</kbd>–<kbd>7</kbd> build · <kbd>Z</kbd>/<kbd>X</kbd> upgrade branch · <kbd>S</kbd> sell · <kbd>T</kbd> targeting · <kbd>Q</kbd>/<kbd>W</kbd> Kings · <kbd>B</kbd> bond · <kbd>Space</kbd> send wave · <kbd>P</kbd> pause · <kbd>F</kbd> speed · <kbd>Esc</kbd> cancel.</p>
+    ${app.touch ? `<p><b>Touch:</b> tap a tower in the bottom bar, tap open land to preview it, tap the same spot again (or ✓) to build. Tap a built tower to open its panel. Long-press or tap an enemy to inspect it. Pinch or double-tap to zoom, drag to pan, ⤢ resets the view. ☰ opens the panels (Kings, Bonds, Letters, Log). Add to your Home Screen for fullscreen.</p>` : ''}
+    <p class="${app.touch ? 'hidden' : ''}"><b>Keys:</b> <kbd>1</kbd>–<kbd>7</kbd> build · <kbd>Z</kbd>/<kbd>X</kbd> upgrade branch · <kbd>S</kbd> sell · <kbd>T</kbd> targeting · <kbd>Q</kbd>/<kbd>W</kbd> Kings · <kbd>B</kbd> bond · <kbd>Space</kbd> send wave · <kbd>P</kbd> pause · <kbd>F</kbd> speed · <kbd>Esc</kbd> cancel.</p>
     <p>Add <code>?debug</code> to the URL for the tuning panel.</p>
     </div><div class="actions"><button id="back">Back</button></div>`, (el) => {
     el.querySelector('#back').onclick = () => (app.world && !app.world.over ? hide() : titleScreen(app));

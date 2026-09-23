@@ -6,11 +6,14 @@ import { Renderer } from './render.js';
 import { Hud } from './hud.js';
 import { loadMeta, recordRun, worldUnlocks } from './meta.js';
 import * as screens from './screens.js';
+import { Gestures } from './touch.js';
 
 const STEP = 1 / 60;
 const MAX_STEPS = 24;
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
+// touch UI: coarse pointer (phones/tablets) or forced with ?touch
+const TOUCH = params.has('touch') || matchMedia('(pointer: coarse)').matches;
 
 class App {
   constructor() {
@@ -19,7 +22,9 @@ class App {
     this.meta = loadMeta();
     this.debugMode = params.has('debug');
     this.speeds = this.debugMode ? [1, 2, 3, 5, 8] : [1, 2, 3];
-    this.ui = { placing: null, selected: null, hover: null, mouse: null, hoverBuild: null, hoverEnemy: null, kingTargeting: null, speed: 1, paused: false };
+    this.touch = TOUCH;
+    document.body.classList.toggle('touch', TOUCH);
+    this.ui = { placing: null, selected: null, hover: null, mouse: null, hoverBuild: null, hoverEnemy: null, kingTargeting: null, speed: 1, paused: false, touch: TOUCH };
     this.world = null;
     this.backdrop = new World({ headless: true, seed: 1 });
     this.backdrop.events.length = 0;
@@ -40,7 +45,8 @@ class App {
     const un = worldUnlocks(this.meta);
     const seed = params.has('seed') ? Number(params.get('seed')) : undefined;
     this.world = new World({ seed, kings, mandates, unlocks: { towers: un.towers, doctrines: un.doctrines } });
-    Object.assign(this.ui, { placing: null, selected: null, kingTargeting: null, paused: false, speed: 1 });
+    Object.assign(this.ui, { placing: null, selected: null, kingTargeting: null, hover: null, mouse: null, hoverEnemy: null, paused: false, speed: 1 });
+    this.renderer.resetView();
     this.ended = false;
     this.hud.log = [];
     this.hud.renderLog();
@@ -84,7 +90,7 @@ class App {
         case 'bbl': this.hud.pushLog(ev.text, ev.text.startsWith('SUSAN') || ev.text.startsWith('MINISTER') ? 'warn' : 'bbl'); break;
         case 'waveStart': this.banner(ev.text); this.hud.pushLog(ev.text); break;
         case 'boss': this.banner(ev.text); break;
-        case 'doctrine': if (w.pendingDoctrine) { this.ui.placing = null; screens.doctrineScreen(this, w); } break;
+        case 'doctrine': if (w.pendingDoctrine) { this.ui.placing = null; this.ui.kingTargeting = null; screens.doctrineScreen(this, w); } break;
         case 'defeat': case 'victory': this.endRun(w); break;
         default: this.hud.pushLog(ev.text);
       }
@@ -110,52 +116,152 @@ class App {
   }
 
   // ------------------------------------------------------------------ input
-  toWorld(ev) {
-    const r = this.canvas.getBoundingClientRect();
-    // the canvas keeps a 16:9 aspect inside its box; compute the drawn area
-    const scale = Math.min(r.width / W, r.height / H);
-    const ox = r.left + (r.width - W * scale) / 2, oy = r.top + (r.height - H * scale) / 2;
-    return { x: (ev.clientX - ox) / scale, y: (ev.clientY - oy) / scale };
+  toWorld(ev) { return this.renderer.toWorld(ev.clientX, ev.clientY); }
+
+  enemyNear(p, radius) {
+    const w = this.world;
+    let best = radius * radius, found = null;
+    if (!w) return null;
+    for (const e of w.enemies) {
+      const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2;
+      if (e.alive && d < best && w.visible(e)) { best = d; found = e; }
+    }
+    return found;
   }
+
+  // Tap/click on the map. Desktop acts immediately; touch previews first and
+  // confirms on a second tap of the same spot (or the ✓ button).
+  tapMap(ev) {
+    const w = this.world;
+    if (!w) return;
+    const p = this.toWorld(ev);
+    const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+    const ui = this.ui;
+    if (ui.kingTargeting) {
+      const same = ui.mouse && Math.hypot(ui.mouse.x - p.x, ui.mouse.y - p.y) < 30;
+      if (this.touch && !same) { ui.mouse = p; return; }
+      this.confirmKing(this.touch ? ui.mouse : p);
+      return;
+    }
+    if (ui.placing) {
+      const same = ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
+      if (this.touch && !same) { ui.hover = { tx, ty }; return; }
+      this.confirmBuild(tx, ty, ev.shiftKey);
+      return;
+    }
+    const t = w.towerAt(tx, ty);
+    if (t) {
+      ui.selected = t;
+      ui.hoverEnemy = null;
+      if (this.touch) this.openDrawer('info');
+      return;
+    }
+    ui.selected = null;
+    if (this.touch) {
+      const e = this.enemyNear(p, 26);
+      ui.hoverEnemy = e;
+      if (e) { this.openDrawer('info'); return; }
+      this.closeDrawer();
+      // double-tap empty ground: toggle 2x zoom around the tap
+      const now = performance.now();
+      if (this.lastEmptyTap && now - this.lastEmptyTap.t < 320 && Math.hypot(ev.clientX - this.lastEmptyTap.x, ev.clientY - this.lastEmptyTap.y) < 40) {
+        const r = this.renderer;
+        if (r.cam.z > 1.05) r.resetView(); else r.zoomAt(2, ev.clientX, ev.clientY);
+        this.lastEmptyTap = null;
+      } else this.lastEmptyTap = { t: now, x: ev.clientX, y: ev.clientY };
+    }
+  }
+
+  confirmBuild(tx, ty, keep = false) {
+    const w = this.world;
+    const why = w.canPlace(this.ui.placing, tx, ty);
+    if (!why) {
+      const t = w.placeTower(this.ui.placing, tx, ty);
+      if (!keep) { this.ui.placing = null; this.ui.selected = t; this.ui.hover = null; }
+    } else if (why === 'gold' || why === 'ale') this.hud.pushLog(`Not enough ${why}.`, 'warn');
+    else if (this.touch) this.hud.pushLog(why === 'occupied' ? 'Something is already built there.' : why === 'max' ? 'You have the maximum of those.' : 'You can only build on open land.', 'warn');
+    this.hud.lastPanels = 0;
+  }
+
+  confirmKing(p) {
+    if (!p) return;
+    if (this.world.useKing(this.ui.kingTargeting, p)) { this.ui.kingTargeting = null; this.ui.mouse = null; }
+    else this.hud.pushLog('The barricade must go on the road.', 'warn');
+    this.hud.lastPanels = 0;
+  }
+
+  // the ✓ on the touch confirm bar
+  confirmPending() {
+    const ui = this.ui;
+    if (ui.kingTargeting) this.confirmKing(ui.mouse);
+    else if (ui.placing && ui.hover) this.confirmBuild(ui.hover.tx, ui.hover.ty);
+  }
+
+  longPressMap(ev) {
+    const p = this.toWorld(ev);
+    const e = this.enemyNear(p, 34);
+    const t = this.world?.towerAt(Math.floor(p.x / TILE), Math.floor(p.y / TILE));
+    if (e) { this.ui.hoverEnemy = e; this.ui.selected = null; }
+    else if (t) this.ui.selected = t;
+    else return;
+    if (this.touch) this.openDrawer('info');
+    this.hud.lastPanels = 0;
+  }
+
+  openDrawer(tab) {
+    if (tab) this.hud.setTab(tab);
+    document.body.classList.add('drawer-open');
+    this.hud.lastPanels = 0;
+  }
+
+  closeDrawer() { document.body.classList.remove('drawer-open'); }
 
   bindInput() {
     const c = this.canvas;
-    c.addEventListener('mousemove', (ev) => {
-      const p = this.toWorld(ev);
-      this.ui.mouse = p;
-      this.ui.hover = { tx: Math.floor(p.x / TILE), ty: Math.floor(p.y / TILE) };
-      const w = this.world;
-      this.ui.hoverEnemy = null;
-      if (w) {
-        let best = 18 * 18;
-        for (const e of w.enemies) {
-          const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2;
-          if (e.alive && d < best && w.visible(e)) { best = d; this.ui.hoverEnemy = e; }
+    new Gestures(c, {
+      tap: (ev) => this.tapMap(ev),
+      longPress: (ev) => this.longPressMap(ev),
+      hover: (ev) => {
+        if (this.touch && ev.pointerType !== 'mouse') return;
+        const p = this.toWorld(ev);
+        this.ui.mouse = p;
+        this.ui.hover = { tx: Math.floor(p.x / TILE), ty: Math.floor(p.y / TILE) };
+        this.ui.hoverEnemy = this.enemyNear(p, 18);
+      },
+      leave: () => { if (!this.touch) { this.ui.hover = null; this.ui.mouse = null; } },
+      pan: (dx, dy) => this.renderer.panBy(dx, dy),
+      pinch: (f, cx, cy) => this.renderer.zoomAt(f, cx, cy),
+      cancel: () => this.cancel(),
+    });
+
+    $('b-confirm').onclick = () => this.confirmPending();
+    $('b-cancel').onclick = () => this.cancel();
+    $('b-fit').onclick = () => this.renderer.resetView();
+    $('b-help').onclick = () => screens.helpScreen(this);
+    $('b-drawer').onclick = () => document.body.classList.toggle('drawer-open');
+    $('b-drawer-close').onclick = () => this.closeDrawer();
+    const full = $('b-full');
+    if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+      full.onclick = () => {
+        const el = document.documentElement;
+        if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        else {
+          const req = el.requestFullscreen || el.webkitRequestFullscreen;
+          Promise.resolve(req?.call(el, { navigationUI: 'hide' })).then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
         }
-      }
+      };
+    } else full.classList.add('hidden');
+    $('rotate-dismiss').onclick = () => $('rotate').classList.add('hidden');
+    $('side-tabs').addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-tab]');
+      if (b) this.hud.setTab(b.dataset.tab);
     });
-    c.addEventListener('mouseleave', () => { this.ui.hover = null; this.ui.mouse = null; });
-    c.addEventListener('contextmenu', (ev) => { ev.preventDefault(); this.cancel(); });
-    c.addEventListener('mousedown', (ev) => {
-      if (ev.button !== 0 || !this.world) return;
-      const w = this.world;
-      const p = this.toWorld(ev);
-      const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
-      if (this.ui.kingTargeting) {
-        if (w.useKing(this.ui.kingTargeting, p)) this.ui.kingTargeting = null;
-        else this.hud.pushLog('The barricade must go on the road.', 'warn');
-        return;
-      }
-      if (this.ui.placing) {
-        const why = w.canPlace(this.ui.placing, tx, ty);
-        if (!why) {
-          const t = w.placeTower(this.ui.placing, tx, ty);
-          if (!ev.shiftKey) { this.ui.placing = null; this.ui.selected = t; }
-        } else if (why === 'gold' || why === 'ale') this.hud.pushLog(`Not enough ${why}.`, 'warn');
-        return;
-      }
-      this.ui.selected = w.towerAt(tx, ty);
-    });
+
+    // a phone going to sleep or switching apps pauses the siege
+    document.addEventListener('visibilitychange', () => { if (document.hidden && this.world) this.ui.paused = true; });
+    window.addEventListener('pagehide', () => { if (this.world) this.ui.paused = true; });
+    // iOS Safari page pinch-zoom (outside the canvas)
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
 
     $('b-speed').onclick = () => this.cycleSpeed();
     $('b-pause').onclick = () => { this.ui.paused = !this.ui.paused; };
@@ -200,9 +306,8 @@ class App {
   }
 
   cancel() {
-    this.ui.placing = null;
-    this.ui.kingTargeting = null;
-    this.ui.selected = null;
+    Object.assign(this.ui, { placing: null, kingTargeting: null, selected: null, hoverEnemy: null });
+    if (this.touch) { this.ui.hover = null; this.ui.mouse = null; }
   }
 
   cycleSpeed() {
@@ -226,6 +331,7 @@ class App {
         this.ui.placing = this.ui.placing === d.type ? null : d.type;
         this.ui.selected = null;
         this.ui.kingTargeting = null;
+        if (this.touch) { this.ui.hover = null; this.closeDrawer(); }
         break;
       case 'up': if (t) w.upgrade(t, Number(d.branch)); break;
       case 'sell': if (t && w.sell(t)) this.ui.selected = null; break;
@@ -234,7 +340,12 @@ class App {
       case 'king': {
         const id = d.id;
         if (!w.kingReady(id)) return;
-        if (id === 'jagerbauhm') { this.ui.kingTargeting = this.ui.kingTargeting === id ? null : id; this.ui.placing = null; }
+        if (id === 'jagerbauhm') {
+          this.ui.kingTargeting = this.ui.kingTargeting === id ? null : id;
+          this.ui.placing = null;
+          this.ui.mouse = null;
+          if (this.touch) this.closeDrawer();
+        }
         else w.useKing(id);
         break;
       }

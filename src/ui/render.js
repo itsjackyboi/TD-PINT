@@ -5,18 +5,72 @@ import { TOWERS } from '../data/towers.js';
 const LAND = ['#3b3322', '#372f1f', '#3e3424', '#35302a'];
 const PATH = '#6d5b40', PATH_EDGE = '#4d3f2b', BRIDGE = '#7b5a33', WATER = '#132230';
 
+const MAX_ZOOM = 3;
+
 export class Renderer {
   constructor(canvas) {
     this.c = canvas;
     this.g = canvas.getContext('2d');
     this.bg = null;
     this.bgKey = '';
+    // camera: zoom factor over "fit to box", centred on world point (x, y)
+    this.cam = { z: 1, x: W / 2, y: H / 2 };
+    this.cssW = 0; this.cssH = 0; this.dpr = 1; this.fit = 1;
   }
+
+  // Match the backing store to the canvas' CSS box (sharp on HiDPI and when zoomed).
+  layout() {
+    const cw = this.c.clientWidth || W, ch = this.c.clientHeight || H;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cw !== this.cssW || ch !== this.cssH || dpr !== this.dpr) {
+      this.cssW = cw; this.cssH = ch; this.dpr = dpr;
+      this.c.width = Math.round(cw * dpr);
+      this.c.height = Math.round(ch * dpr);
+      this.fit = Math.min(cw / W, ch / H);
+      this.clamp();
+    }
+  }
+
+  scale() { return this.fit * this.cam.z; }
+
+  clamp() {
+    const s = this.scale();
+    const hw = this.cssW / (2 * s), hh = this.cssH / (2 * s);
+    this.cam.x = hw >= W / 2 ? W / 2 : Math.max(hw, Math.min(W - hw, this.cam.x));
+    this.cam.y = hh >= H / 2 ? H / 2 : Math.max(hh, Math.min(H - hh, this.cam.y));
+  }
+
+  // client (viewport) coordinates -> world coordinates
+  toWorld(clientX, clientY) {
+    const r = this.c.getBoundingClientRect();
+    const s = this.scale();
+    return { x: (clientX - r.left - this.cssW / 2) / s + this.cam.x, y: (clientY - r.top - this.cssH / 2) / s + this.cam.y };
+  }
+
+  // zoom by factor keeping the world point under (clientX, clientY) fixed
+  zoomAt(factor, clientX, clientY) {
+    const before = this.toWorld(clientX, clientY);
+    this.cam.z = Math.max(1, Math.min(MAX_ZOOM, this.cam.z * factor));
+    const after = this.toWorld(clientX, clientY);
+    this.cam.x += before.x - after.x;
+    this.cam.y += before.y - after.y;
+    this.clamp();
+  }
+
+  panBy(dxClient, dyClient) {
+    const s = this.scale();
+    this.cam.x -= dxClient / s;
+    this.cam.y -= dyClient / s;
+    this.clamp();
+  }
+
+  resetView() { this.cam.z = 1; this.cam.x = W / 2; this.cam.y = H / 2; this.clamp(); }
 
   buildBackground(world) {
     const off = document.createElement('canvas');
-    off.width = W; off.height = H;
+    off.width = W * 2; off.height = H * 2;
     const g = off.getContext('2d');
+    g.scale(2, 2);
     const map = world.map;
     g.fillStyle = WATER;
     g.fillRect(0, 0, W, H);
@@ -95,8 +149,14 @@ export class Renderer {
 
   draw(world, ui) {
     const g = this.g;
+    this.layout();
     if (!this.bg || this.bgKey !== world.activePaths.join('')) this.buildBackground(world);
-    g.drawImage(this.bg, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = '#0b0907';
+    g.fillRect(0, 0, this.c.width, this.c.height);
+    const s = this.scale() * this.dpr;
+    g.setTransform(s, 0, 0, s, this.dpr * (this.cssW / 2) - this.cam.x * s, this.dpr * (this.cssH / 2) - this.cam.y * s);
+    g.drawImage(this.bg, 0, 0, W, H);
     const t = performance.now() / 1000;
 
     // morale tint on districts in danger
@@ -131,6 +191,11 @@ export class Renderer {
 
     for (const tw of world.towers) this.tower(tw, world, t);
     for (const e of world.enemies) if (e.alive) this.enemy(e, world, t);
+    const insp = ui.hoverEnemy;
+    if (insp && insp.alive) {
+      g.strokeStyle = '#ffe08a'; g.lineWidth = 2;
+      g.beginPath(); g.arc(insp.x, insp.y, insp.def.size + 7, 0, 7); g.stroke(); g.lineWidth = 1;
+    }
 
     for (const p of world.projectiles) {
       g.fillStyle = p.color;
@@ -167,6 +232,9 @@ export class Renderer {
       }
     }
 
+    // screen-space overlays, laid out as if unzoomed so they stay put while panning
+    const f = this.fit * this.dpr;
+    g.setTransform(f, 0, 0, f, this.dpr * (this.cssW / 2) - (W / 2) * f, this.dpr * (this.cssH / 2) - (H / 2) * f);
     if (world.boss && world.boss.alive) this.bossBar(world.boss);
     if (world.chugT > 0 || world.hangoverT > 0) {
       g.font = '700 14px Georgia, serif';
