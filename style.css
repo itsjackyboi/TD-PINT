@@ -1,3 +1,5 @@
+@font-face { font-family: 'Kenney Pixel'; src: url('assets/fonts/kenney-pixel.ttf') format('truetype'); font-display: swap; }
+@font-face { font-family: 'Kenney Mini'; src: url('assets/fonts/kenney-mini.ttf') format('truetype'); font-display: swap; }
 :root {
   --bg: #120e0a; --panel: #1d1712; --panel2: #261e17; --ink: #e9dcc0; --dim: #a8987a; --gold: #e0b93c;
   --ale: #d9a13c; --red: #e05a47; --pink: #ff5fb0; --line: #3a2e22; --good: #7dd98a;
@@ -188,4 +190,110 @@ body.touch input, body.touch select { font-size: 16px; } /* stops iOS focus-zoom
   .help { columns: 1; }
   .card h1 { font-size: 28px; }
   #banner { font-size: 20px; }
+}
+
+/* ================================================================== pixel skin
+   Kenney pixel-adventure UI frames (CC0), 9-sliced with border-image. Headings,
+   buttons and numbers use the Kenney Pixel font; longer prose stays serif. */
+:root { --pixel: 'Kenney Pixel', 'Kenney Mini', monospace; --wood: #6b4424; --wood-dark: #3a2414; }
+html, body { background: #120d0a; }
+button {
+  font-family: var(--pixel); font-size: 22px; line-height: 1; color: #3b2616; background: none;
+  border: 8px solid transparent; border-image: url('assets/ui/button.png') 4 fill / 8px stretch;
+  border-radius: 0; padding: 2px 6px; image-rendering: pixelated; letter-spacing: 0.02em;
+}
+button:hover:not(:disabled) { border-color: transparent; filter: brightness(1.08); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button.primary { color: #fff4e0; background: none; border-image-source: url('assets/ui/button-red.png'); text-shadow: 0 1px 0 #5a1a14; }
+button.on { border-image-source: url('assets/ui/button-steel.png'); color: #f2f6fa; }
+button:disabled { opacity: 0.5; filter: saturate(0.4); }
+h3 { font-family: var(--pixel); font-size: 22px; letter-spacing: 0.08em; }
+
+#topbar {
+  background: var(--wood-dark); border-bottom: 0;
+  border-image: url('assets/ui/frame-wood.png') 5 fill / 0 0 8px 0 stretch; padding-bottom: 8px;
+  image-rendering: pixelated;
+}
+#topbar .res b { font-family: var(--pixel); font-size: 26px; font-weight: normal; line-height: 0.9; }
+#topbar .lbl { font-family: var(--pixel); font-size: 16px; color: #d8b88a; }
+#topbar .res.small b { font-family: var(--pixel); font-size: 20px; color: #f0dcb8; }
+#topbar .res .lbl::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 3px; vertical-align: -1px;
+  background-size: contain; image-rendering: pixelated; }
+#topbar .res:nth-child(1) .lbl::before { background-image: url('assets/ui/icon-gold.png'); }
+#topbar .res:nth-child(2) .lbl::before { background-image: url('assets/ui/icon-ale.png'); }
+#topbar .res:nth-child(3) .lbl::before { background-image: url('assets/ui/icon-resolve.png'); }
+#topbar .res:nth-child(4) .lbl::before { background-image: url('assets/ui/icon-wave.png'); }
+#r-gold { color: #ffd35a; } #r-ale { color: #f0a848; } #r-resolve { color: #ff6a5a; }
+.mbar { font-family: var(--pixel); font-size: 16px; color: #d8b88a; }
+.mbar .track { height: 8px; background: #1a0f08; border: 2px solid #1a0f08; }
+.mbar .thresh { background: #fff; width: 2px; }
+
+/* the sidebar is a wooden board holding parchment notes */
+#side { background: #4a2f1a; border-left: 0; padding: 10px; gap: 10px; }
+#side section, #side nav {
+  --ink: #3b2616; --dim: #7a5634; --gold: #9a5b00; --red: #b0302a; --pink: #b0306a; --line: #c9a878;
+  color: var(--ink); background: none; border: 12px solid transparent !important;
+  border-image: url('assets/ui/frame-parchment.png') 6 fill / 12px stretch !important; image-rendering: pixelated;
+  padding: 0 !important; margin: 0;
+}
+#side h3 { color: #7a4a1c; margin-bottom: 4px; }
+#side .muted, #side .flavor { color: var(--dim); }
+#side .branch { background: rgba(122,86,52,0.12); border: 2px solid #c9a878; border-radius: 0; }
+#side .branch .bname { font-family: var(--pixel); font-size: 21px; font-weight: normal; }
+#side .stats span:nth-child(even) { font-family: var(--pixel); font-size: 21px; line-height: 0.9; }
+#side .modes button { font-size: 19px; }
+#side .king .kdesc { color: var(--dim); }
+#letter .ltext { background: #fff8e4; color: #2a2018; border: 2px dashed #c9a878; }
+#log div.bbl { color: #6a4a1a; } #log div.warn { color: #b0306a; }
+#side-tabs button { font-size: 20px; }
+.tag.auth { background: #2f6a2f; } .tag.forged { background: #8a1f2a; }
+
+/* build bar: wooden shelf of tower cards, each showing the tower's sprite */
+#buildbar { background: var(--wood-dark); border-top: 0; border-image: url('assets/ui/frame-wood.png') 5 fill / 8px 0 0 0 stretch; padding-top: 10px; }
+.tb { flex-direction: row; align-items: center; gap: 6px; }
+.tb img.ticon { width: 30px; height: 45px; image-rendering: pixelated; flex: none; margin: -6px 0 -4px; }
+.tb .tlabel { display: flex; flex-direction: column; align-items: flex-start; }
+.tb .tname, .tb .tshort { font-family: var(--pixel); font-size: 21px; font-weight: normal; color: #3b2616; }
+.tb .tcost { font-family: var(--pixel); font-size: 19px; color: #8a5200; }
+.tb .key { font-family: var(--pixel); font-size: 16px; color: #8a6a44; }
+.tb.on { border-image-source: url('assets/ui/button-steel.png'); }
+.tb.on .tname, .tb.on .tshort, .tb.on .tcost { color: #f2f6fa; }
+
+/* modals: a big sheet of parchment */
+#modal { background: rgba(10,6,4,0.78); }
+.card {
+  --ink: #3b2616; --dim: #7a5634; --gold: #9a5b00; --red: #b0302a; --pink: #b0306a; --line: #c9a878;
+  color: var(--ink); background: none; border: 24px solid transparent; border-radius: 0; box-shadow: none;
+  border-image: url('assets/ui/frame-parchment.png') 6 fill / 24px stretch; image-rendering: pixelated;
+  padding: 4px 10px; filter: drop-shadow(0 10px 24px rgba(0,0,0,0.6));
+}
+.card h1 { font-family: var(--pixel); font-weight: normal; font-size: 64px; color: #9a3b1a; line-height: 0.9; text-shadow: 3px 3px 0 #e8c890; }
+.card h2 { font-family: var(--pixel); font-weight: normal; font-size: 34px; color: #7a3b1a; }
+.card .sub { font-family: var(--pixel); font-size: 22px; color: #b0306a; }
+.card .muted { color: var(--dim); }
+.choice { background: rgba(122,86,52,0.1); border: 2px solid #c9a878; border-radius: 0; color: var(--ink); font-family: inherit; }
+.choice .cname { font-family: var(--pixel); font-size: 26px; font-weight: normal; }
+.choice.sel { border-color: #9a3b1a; box-shadow: 0 0 0 2px #9a3b1a inset; background: rgba(154,59,26,0.1); }
+.choice img.portrait { float: left; width: 48px; height: 48px; image-rendering: pixelated; margin: 0 8px 4px 0; }
+table.runs td, table.runs th { border-bottom-color: #c9a878; }
+kbd { background: #3b2616; color: #f2e6c8; border: 0; }
+.title-art { display: block; width: 100%; max-width: 640px; height: auto; image-rendering: pixelated; margin: 0 auto 8px; }
+#confirm { background: none; border: 10px solid transparent; border-image: url('assets/ui/frame-parchment.png') 6 fill / 10px stretch; color: #3b2616; box-shadow: none; filter: drop-shadow(0 4px 10px #000); }
+#banner { font-family: var(--pixel); font-size: 56px; color: #ffd35a; text-shadow: 3px 3px 0 #5a1a14, 0 0 20px #000; }
+#rotate { background: none; border: 10px solid transparent; border-image: url('assets/ui/frame-parchment.png') 6 fill / 10px stretch; color: #3b2616; }
+body.touch button { min-height: 40px; font-size: 22px; }
+@media (max-height: 500px) {
+  #topbar .res b { font-size: 20px; }
+  body.touch #buildbar { border-image-width: 0 8px 0 0; padding: 4px 10px 4px 4px; }
+  .tb img.ticon { width: 22px; height: 33px; }
+  .card h1 { font-size: 42px; }
+  #banner { font-size: 36px; }
+}
+@media (max-width: 700px) {
+  .card h1 { font-size: 42px; } #banner { font-size: 32px; }
+  body.touch .tb { flex-direction: column; min-width: 96px; gap: 0; padding: 2px 4px; }
+  body.touch .tb img.ticon { width: 20px; height: 30px; margin: 0; }
+  body.touch .tb .tlabel { align-items: center; }
+  body.touch .tb .tshort { font-size: 18px; }
+  body.touch .tb .tcost { font-size: 14px; white-space: nowrap; }
 }

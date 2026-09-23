@@ -1,6 +1,8 @@
 // Canvas renderer. Reads world state; never mutates it.
 import { TILE, COLS, ROWS, W, H, DISTRICTS, CASTLE } from '../core/map.js';
 import { TOWERS } from '../data/towers.js';
+import { sprites } from './sprites.js';
+import * as px from './pixelart.js';
 
 const LAND = ['#3b3322', '#372f1f', '#3e3424', '#35302a'];
 const PATH = '#6d5b40', PATH_EDGE = '#4d3f2b', BRIDGE = '#7b5a33', WATER = '#132230';
@@ -67,6 +69,9 @@ export class Renderer {
   resetView() { this.cam.z = 1; this.cam.x = W / 2; this.cam.y = H / 2; this.clamp(); }
 
   buildBackground(world) {
+    this.bgKey = world.activePaths.join('') + (sprites.ready ? '|px' : '');
+    if (sprites.ready) { this.bg = px.buildPixelBackground(world); this.pixel = true; return; }
+    this.pixel = false;
     const off = document.createElement('canvas');
     off.width = W * 2; off.height = H * 2;
     const g = off.getContext('2d');
@@ -144,20 +149,21 @@ export class Renderer {
       g.fillText('MAMA', x - 14, y);
     }
     this.bg = off;
-    this.bgKey = world.activePaths.join('');
   }
 
   draw(world, ui) {
     const g = this.g;
     this.layout();
-    if (!this.bg || this.bgKey !== world.activePaths.join('')) this.buildBackground(world);
+    if (!this.bg || this.bgKey !== world.activePaths.join('') + (sprites.ready ? '|px' : '')) this.buildBackground(world);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = '#0b0907';
     g.fillRect(0, 0, this.c.width, this.c.height);
     const s = this.scale() * this.dpr;
     g.setTransform(s, 0, 0, s, this.dpr * (this.cssW / 2) - this.cam.x * s, this.dpr * (this.cssH / 2) - this.cam.y * s);
+    g.imageSmoothingEnabled = !this.pixel;
     g.drawImage(this.bg, 0, 0, W, H);
     const t = performance.now() / 1000;
+    if (this.pixel) { this.drawPixel(world, ui, t); return; }
 
     // morale tint on districts in danger
     DISTRICTS.forEach((d, i) => {
@@ -241,6 +247,125 @@ export class Renderer {
       g.fillStyle = world.chugT > 0 ? '#ffd35a' : '#8aa';
       g.fillText(world.chugT > 0 ? `CHUG! ${world.chugT.toFixed(1)}s` : `Hungover ${world.hangoverT.toFixed(1)}s`, 12, H - 12);
     }
+  }
+
+  // ------------------------------------------------------------ pixel-art mode
+  drawPixel(world, ui, t) {
+    const g = this.g;
+    DISTRICTS.forEach((d, i) => {
+      if (world.morale[i] < world.mods.moraleThreshold + 10) {
+        const [x0, y0, x1, y1] = d.rect;
+        g.fillStyle = `rgba(194,59,138,${0.08 + 0.05 * Math.sin(t * 3)})`;
+        g.fillRect(x0 * TILE, y0 * TILE, (x1 - x0) * TILE, (y1 - y0) * TILE);
+      }
+    });
+    if (ui.placing) this.buildGrid(world);
+    for (const b of world.barricades) px.drawBarricade(g, b);
+
+    const sel = ui.selected && world.towers.includes(ui.selected) ? ui.selected : null;
+    if (sel) this.rangeRing(sel.x, sel.y, sel.s, '#ffe08a');
+    if (ui.placing && ui.hover) {
+      const def = TOWERS[ui.placing];
+      const why = world.canPlace(ui.placing, ui.hover.tx, ui.hover.ty);
+      this.rangeRing((ui.hover.tx + 0.5) * TILE, (ui.hover.ty + 0.5) * TILE, { ...def.base, range: (def.base.range || 0) * (1 + world.mods.rangeMult) }, why ? '#ff5050' : '#7dff9a');
+    }
+
+    // y-sorted towers and enemies for a 3/4 look
+    const list = this.drawList || (this.drawList = []);
+    list.length = 0;
+    for (const tw of world.towers) list.push(tw);
+    for (const e of world.enemies) if (e.alive) list.push(e);
+    list.sort((a, b) => (a.def.base ? (a.ty + 1) * TILE : a.y + 12) - (b.def.base ? (b.ty + 1) * TILE : b.y + 12));
+    for (const o of list) {
+      if (o.def.base) this.pixelTower(o, world, t, sel === o);
+      else px.drawEnemy(g, o, world, t, ui.hoverEnemy === o);
+    }
+    px.pruneEnemyMemory(t);
+
+    if (ui.placing && ui.hover) {
+      const why = world.canPlace(ui.placing, ui.hover.tx, ui.hover.ty);
+      g.globalAlpha = 0.75;
+      px.drawTower(g, ui.placing, ui.hover.tx * TILE, ui.hover.ty * TILE, 0, null, t, { ghost: why ? 'rgba(255,60,60,0.45)' : null });
+      g.globalAlpha = 1;
+    }
+
+    for (const p of world.projectiles) px.drawProjectile(g, p, t);
+    for (const f of world.effects) px.drawEffect(g, f);
+
+    if (ui.kingTargeting) {
+      g.fillStyle = 'rgba(232,224,200,0.08)';
+      g.fillRect(0, 0, W, H);
+      if (ui.mouse) { g.globalAlpha = 0.7; px.drawBarricade(g, ui.mouse); g.globalAlpha = 1; }
+    }
+    this.labels(world);
+
+    const f = this.fit * this.dpr;
+    g.setTransform(f, 0, 0, f, this.dpr * (this.cssW / 2) - (W / 2) * f, this.dpr * (this.cssH / 2) - (H / 2) * f);
+    px.vignette(g);
+    if (world.boss && world.boss.alive) this.bossBar(world.boss);
+    if (world.chugT > 0 || world.hangoverT > 0) {
+      g.font = '24px "Kenney Pixel", monospace';
+      g.fillStyle = world.chugT > 0 ? '#ffd35a' : '#9ab';
+      g.fillText(world.chugT > 0 ? `CHUG! ${world.chugT.toFixed(1)}s` : `Hungover ${world.hangoverT.toFixed(1)}s`, 12, H - 12);
+    }
+  }
+
+  pixelTower(tw, world, t, selected) {
+    const g = this.g;
+    const x = tw.tx * TILE, y = tw.ty * TILE;
+    if (selected) {
+      g.strokeStyle = '#ffe08a'; g.lineWidth = 2;
+      g.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); g.lineWidth = 1;
+    }
+    const dim = tw.disabledT > 0 || tw.turnedT > 0;
+    if (dim) g.globalAlpha = 0.55;
+    px.drawTower(g, tw.type, x, y, tw.tier, tw.branch, t);
+    g.globalAlpha = 1;
+    if (tw.soberT > 0) { // sobered: blue "zZ"
+      g.fillStyle = '#9fd8ff';
+      const k = (t * 1.5) % 1;
+      g.font = '18px "Kenney Pixel", monospace';
+      g.fillText('z', x + 26, y - 4 - k * 8);
+    }
+    if (tw.disabledT > 0) { // sparks
+      g.fillStyle = '#ffb03d';
+      for (let i = 0; i < 3; i++) g.fillRect(x + 8 + ((t * 40 + i * 11) % 24), y + 4 + ((i * 7 + t * 30) % 20), 3, 3);
+    }
+    if (tw.turnedT > 0) {
+      g.strokeStyle = '#ff5fb0'; g.lineWidth = 2; g.setLineDash([4, 3]);
+      g.beginPath(); g.arc(tw.x, tw.y, 22 + Math.sin(t * 8) * 2, 0, 7); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
+    }
+    if (tw.plinketMarked && world.boss && world.boss.phase >= 2) {
+      g.fillStyle = '#ff5fb0'; g.fillRect(x + 30, y - 10, 5, 5);
+    }
+    if (tw.auraRate > 0 && tw.soberT <= 0 && !tw.s.aura) { g.fillStyle = '#ffd35a'; g.fillRect(x + 32, y + 30, 4, 4); }
+  }
+
+  // faint build grid while placing, so buildable land reads clearly
+  buildGrid(world) {
+    const g = this.g;
+    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+      if (world.map.buildable(tx, ty) && !world.towerAt(tx, ty)) g.rect(tx * TILE + 1.5, ty * TILE + 1.5, TILE - 3, TILE - 3);
+    }
+    g.stroke();
+  }
+
+  labels(world) {
+    const g = this.g;
+    g.font = '20px "Kenney Pixel", monospace';
+    g.textBaseline = 'top';
+    for (const d of DISTRICTS) {
+      const [x0, y0] = d.rect;
+      const text = d.name.toUpperCase();
+      g.fillStyle = 'rgba(20,12,8,0.55)';
+      g.fillText(text, x0 * TILE + 9, y0 * TILE + 5);
+      g.fillStyle = 'rgba(255,240,200,0.8)';
+      g.fillText(text, x0 * TILE + 8, y0 * TILE + 4);
+    }
+    g.textBaseline = 'alphabetic';
   }
 
   rangeRing(x, y, s, color) {
@@ -335,7 +460,7 @@ export class Renderer {
     const g = this.g;
     const w = 520, x = (W - w) / 2, y = 10;
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x - 6, y - 4, w + 12, 34);
-    g.font = '700 13px Georgia, serif'; g.fillStyle = '#ff5fb0'; g.textAlign = 'center';
+    g.font = this.pixel ? '22px "Kenney Pixel", monospace' : '700 13px Georgia, serif'; g.fillStyle = '#ff5fb0'; g.textAlign = 'center';
     const title = b.phase === 1 ? 'MINISTER SUSAN PLINKET — "a moderate voice"' : b.phase === 2 ? 'J.R. UNMASKED' : 'SUSAN PLINKET, FOUNDER OF MAMA';
     g.fillText(title, W / 2, y + 10);
     g.textAlign = 'left';

@@ -4,6 +4,8 @@ import { MANDATES } from '../data/mandates.js';
 import { DOCTRINES } from '../data/doctrines.js';
 import { INTRO, DEATHS } from '../data/lore.js';
 import { UNLOCKS, worldUnlocks, resetMeta } from './meta.js';
+import { sprites } from './sprites.js';
+import { titleArtURL, KING_PORTRAIT } from './pixelart.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const modal = () => document.getElementById('modal');
@@ -19,7 +21,7 @@ export function isOpen() { return !modal().classList.contains('hidden'); }
 
 export function titleScreen(app) {
   const m = app.meta;
-  show(`<h1>Siege of Aleforge</h1><div class="sub">A Pintland Isles tower defense · permadeath</div>
+  show(`${sprites.ready ? `<img class="title-art" alt="" src="${titleArtURL()}">` : ''}<h1>Siege of Aleforge</h1><div class="sub">A Pintland Isles tower defense · permadeath</div>
     ${INTRO.map((p) => `<p>${esc(p)}</p>`).join('')}
     <p class="muted">Best: wave ${m.bestWave} · ${m.wins} victories · ${m.runs.length} recorded runs</p>
     <div class="actions">
@@ -41,8 +43,9 @@ export function setupScreen(app) {
     <p class="muted">Choose two Liquor Kings. Their abilities cost ale and are your only way out of a bad wave.</p>
     <div class="choices">${Object.entries(KINGS).map(([id, k]) => {
       const ok = un.kings.includes(id);
+      const portrait = sprites.ready ? `<img class="portrait" alt="" src="${sprites.dataURL(KING_PORTRAIT[id], 3)}">` : '';
       return `<div class="choice ${chosen.has(id) ? 'sel' : ''} ${ok ? '' : 'locked'}" data-king="${id}">
-        <div class="cname">${ok ? '' : '🔒 '}${esc(k.name)}</div><div class="muted" style="font-size:12px">“${esc(k.title)}”</div>
+        ${portrait}<div class="cname">${ok ? '' : '🔒 '}${esc(k.name)}</div><div class="muted" style="font-size:12px">“${esc(k.title)}”</div>
         <div class="ctext"><b>${esc(k.ability)}</b> (${k.ale} ale${k.cd ? `, ${k.cd}s cooldown` : ''}): ${esc(k.text)}</div></div>`;
     }).join('')}</div>
     ${un.mandates ? `<h2 style="margin-top:14px">Plinket's Mandates <span class="muted" style="font-size:14px">heat <span id="heat">${mand.size}</span> · best cleared: ${app.meta.maxHeatWon}</span></h2>
@@ -138,7 +141,7 @@ export function helpScreen(app) {
     <p><b>Temperance Matrons</b> sober nearby towers: every buff is stripped and ale towers fire at half speed. <b>Martyrs</b> disable nearby towers when they die. <b>True Believers</b> cleanse slows and burns at half HP.</p>
     <p><b>Doctrines</b> every 5 waves: pick one of three trades. None is free.</p>
     ${app.touch ? `<p><b>Touch:</b> tap a tower in the bottom bar, tap open land to preview it, tap the same spot again (or ✓) to build. Tap a built tower to open its panel. Long-press or tap an enemy to inspect it. Pinch or double-tap to zoom, drag to pan, ⤢ resets the view. ☰ opens the panels (Kings, Bonds, Letters, Log). Add to your Home Screen for fullscreen.</p>` : ''}
-    <p class="${app.touch ? 'hidden' : ''}"><b>Keys:</b> <kbd>1</kbd>–<kbd>7</kbd> build · <kbd>Z</kbd>/<kbd>X</kbd> upgrade branch · <kbd>S</kbd> sell · <kbd>T</kbd> targeting · <kbd>Q</kbd>/<kbd>W</kbd> Kings · <kbd>B</kbd> bond · <kbd>Space</kbd> send wave · <kbd>P</kbd> pause · <kbd>F</kbd> speed · <kbd>Esc</kbd> cancel.</p>
+    <p class="${app.touch ? 'hidden' : ''}"><b>Keys:</b> <kbd>1</kbd>–<kbd>7</kbd> build · <kbd>Z</kbd>/<kbd>X</kbd> upgrade branch · <kbd>S</kbd> sell · <kbd>T</kbd> targeting · <kbd>Q</kbd>/<kbd>W</kbd> Kings · <kbd>B</kbd> bond · <kbd>Space</kbd> send wave · <kbd>P</kbd> pause · <kbd>F</kbd> speed · <kbd>M</kbd> sound · <kbd>Esc</kbd> cancel.</p>
     <p>Add <code>?debug</code> to the URL for the tuning panel.</p>
     </div><div class="actions"><button id="back">Back</button></div>`, (el) => {
     el.querySelector('#back').onclick = () => (app.world && !app.world.over ? hide() : titleScreen(app));

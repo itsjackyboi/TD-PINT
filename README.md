@@ -15,6 +15,15 @@ python3 -m http.server 8080      # then open http://localhost:8080
 - `?seed=123` fixes the run seed. Wave compositions never change; the seed only varies doctrine offers and which letters are forged.
 - `?debug` adds the tuning panel: speed up to 8x, extra gold/ale/Resolve, invincibility, jump to any wave, spawn any enemy, an autoplay bot, per-tower DPS over the last 10s, a leak log, a 300-enemy stress test, and an FPS/frame-time readout. A run that uses any debug cheat isn't recorded in the Ledger.
 
+## Art and sound
+
+The pixel art, UI frames, fonts and sound effects all come from Kenney's free **CC0** packs: Tiny Town, Tiny Dungeon, Tiny Battle, UI Pack Pixel Adventure, Kenney Fonts, and several sound packs. They're committed under `assets/`, and [CREDITS.md](CREDITS.md) lists every pack and its licence.
+
+- **Rebuild the assets:** `node tools/fetch-assets.mjs && node tools/convert-audio.mjs && node tools/cut-ui.mjs`
+- **Sprite reference:** open `/tools/atlas.html` from a local server to see every named sprite.
+- **Code:** `src/ui/sprites.js` is the atlas, and `src/ui/pixelart.js` draws the map, towers, enemies and effects. If the art fails to load, the game falls back to the plain geometric renderer. Presentation is fully separate from the simulation.
+- **Sound:** toggle it with the Sound button or `M`.
+
 ## Playing on a phone or tablet
 
 Touch controls switch on automatically on phones and tablets (mobile Safari and Chrome). To force them on a desktop browser, add `?touch` to the URL. Landscape works best; portrait works too.
@@ -116,7 +125,10 @@ Economy constants are at the top of `src/core/world.js`.
 index.html, style.css
 src/core/   world.js (the whole simulation, DOM-free), map.js, spatial.js, rng.js, bot.js
 src/data/   towers, enemies, waves, doctrines, mandates, kings, lore
-src/ui/     main.js (loop + input), touch.js (gestures), render.js (canvas + camera), hud.js, screens.js, meta.js (Ledger), debug.js
+src/ui/     main.js (loop + input), touch.js (gestures), render.js (canvas + camera), pixelart.js + sprites.js (art),
+            audio.js (SFX), hud.js, screens.js, meta.js (Ledger), debug.js
+assets/     sprites, ui frames, fonts, audio (Kenney CC0) + licenses/
+tools/      fetch-assets.mjs, convert-audio.mjs, cut-ui.mjs, atlas.html
 tools/      sim.mjs, browser-test.mjs, builds/*.json
 ```
 

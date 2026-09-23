@@ -3,6 +3,8 @@
 import { TOWERS, TOWER_ORDER } from '../data/towers.js';
 import { KINGS } from '../data/kings.js';
 import { DISTRICTS } from '../core/map.js';
+import { sprites } from './sprites.js';
+import { towerIconURL, enemyPortraitURL } from './pixelart.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -42,9 +44,10 @@ export class Hud {
     $('buildbar').innerHTML = TOWER_ORDER.map((type) => {
       const def = TOWERS[type];
       const locked = !world.towerUnlocked(type);
+      const icon = sprites.ready ? `<img class="ticon" alt="" src="${towerIconURL(type)}">` : '';
       return `<button class="tb" data-act="build" data-type="${type}" id="tb-${type}" ${locked ? 'disabled title="Locked — see the Ledger"' : ''}>
-        ${this.key(`<span class="key">[${def.key}]</span>`)}<span class="tname">${locked ? '🔒 ' : ''}${esc(def.name)}</span><span class="tshort">${locked ? '🔒 ' : ''}${esc(def.short)}</span>
-        <span class="tcost">${world.cost(def.cost)}g${def.aleCost ? ` + ${def.aleCost} ale` : ''}</span></button>`;
+        ${icon}<span class="tlabel">${this.key(`<span class="key">[${def.key}]</span>`)}<span class="tname">${locked ? '🔒 ' : ''}${esc(def.name)}</span><span class="tshort">${locked ? '🔒 ' : ''}${esc(def.short)}</span>
+        <span class="tcost">${world.cost(def.cost)}g${def.aleCost ? ` + ${def.aleCost} ale` : ''}</span></span></button>`;
     }).join('');
   }
 
@@ -223,7 +226,8 @@ export class Hud {
 
   enemyInfo(world, e) {
     const d = e.def;
-    return `<h3>MAMA</h3><div class="row"><b>${esc(d.name)}</b><span>${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} hp</span></div>
+    const portrait = sprites.ready ? `<img alt="" src="${enemyPortraitURL(e.type)}" style="float:left;width:48px;height:48px;image-rendering:pixelated;margin:0 8px 4px 0">` : '';
+    return `<h3>MAMA</h3>${portrait}<div class="row"><b>${esc(d.name)}</b><span>${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} hp</span></div>
       <div class="flavor">${esc(d.desc)}</div>
       <div class="stats"><span class="muted">Armor</span><span>${d.armor}</span><span class="muted">Speed</span><span>${d.speed}</span>
       <span class="muted">Leak cost</span><span>${d.boss ? 'Everything' : d.leak + ' resolve'}</span><span class="muted">Shield</span><span>${Math.round(e.shield)}</span></div>`;

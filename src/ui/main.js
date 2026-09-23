@@ -7,6 +7,8 @@ import { Hud } from './hud.js';
 import { loadMeta, recordRun, worldUnlocks } from './meta.js';
 import * as screens from './screens.js';
 import { Gestures } from './touch.js';
+import { sprites } from './sprites.js';
+import { sfx, SfxWatcher } from './audio.js';
 
 const STEP = 1 / 60;
 const MAX_STEPS = 24;
@@ -33,7 +35,15 @@ class App {
     this.last = performance.now();
     this.simMs = 0;
     this.debug = null;
+    this.sfxWatch = new SfxWatcher();
     this.bindInput();
+    // art loads in the background; until then (or if it fails) the geometric renderer draws
+    sprites.load().then(() => {
+      document.body.classList.toggle('pixel', sprites.ready);
+      if (this.world) this.hud.buildBar(this.world);
+      else if (sprites.ready && screens.isOpen() && !this.world) screens.titleScreen(this); // redraw with art
+    });
+    document.fonts?.load('20px "Kenney Pixel"').catch(() => {});
     if (this.debugMode) import('./debug.js').then((m) => { this.debug = new m.Debug(this); if (this.world) this.debug.attach(this.world); });
     screens.titleScreen(this);
     requestAnimationFrame((t) => this.frame(t));
@@ -78,6 +88,7 @@ class App {
       this.handleEvents(w);
       this.renderer.draw(w, this.ui);
       this.hud.tick(w, this.ui);
+      this.sfxWatch.tick(w);
     } else {
       this.renderer.draw(this.backdrop, this.ui);
     }
@@ -88,10 +99,11 @@ class App {
     for (const ev of w.events) {
       switch (ev.type) {
         case 'bbl': this.hud.pushLog(ev.text, ev.text.startsWith('SUSAN') || ev.text.startsWith('MINISTER') ? 'warn' : 'bbl'); break;
-        case 'waveStart': this.banner(ev.text); this.hud.pushLog(ev.text); break;
-        case 'boss': this.banner(ev.text); break;
-        case 'doctrine': if (w.pendingDoctrine) { this.ui.placing = null; this.ui.kingTargeting = null; screens.doctrineScreen(this, w); } break;
-        case 'defeat': case 'victory': this.endRun(w); break;
+        case 'waveStart': this.banner(ev.text); this.hud.pushLog(ev.text); sfx.play('wave', 0); break;
+        case 'boss': this.banner(ev.text); sfx.play('boss', 0); break;
+        case 'doctrine': if (w.pendingDoctrine) { this.ui.placing = null; this.ui.kingTargeting = null; screens.doctrineScreen(this, w); sfx.play('doctrine', 0); } break;
+        case 'defeat': case 'victory': this.endRun(w); sfx.play(ev.type, 0); break;
+        case 'waveEnd': this.hud.pushLog(ev.text); sfx.play('coin', 0); break;
         default: this.hud.pushLog(ev.text);
       }
     }
@@ -177,15 +189,16 @@ class App {
     const why = w.canPlace(this.ui.placing, tx, ty);
     if (!why) {
       const t = w.placeTower(this.ui.placing, tx, ty);
+      sfx.play('build');
       if (!keep) { this.ui.placing = null; this.ui.selected = t; this.ui.hover = null; }
-    } else if (why === 'gold' || why === 'ale') this.hud.pushLog(`Not enough ${why}.`, 'warn');
+    } else if (why === 'gold' || why === 'ale') { this.hud.pushLog(`Not enough ${why}.`, 'warn'); sfx.play('error', 0); }
     else if (this.touch) this.hud.pushLog(why === 'occupied' ? 'Something is already built there.' : why === 'max' ? 'You have the maximum of those.' : 'You can only build on open land.', 'warn');
     this.hud.lastPanels = 0;
   }
 
   confirmKing(p) {
     if (!p) return;
-    if (this.world.useKing(this.ui.kingTargeting, p)) { this.ui.kingTargeting = null; this.ui.mouse = null; }
+    if (this.world.useKing(this.ui.kingTargeting, p)) { this.ui.kingTargeting = null; this.ui.mouse = null; sfx.play('king', 0); }
     else this.hud.pushLog('The barricade must go on the road.', 'warn');
     this.hud.lastPanels = 0;
   }
@@ -263,6 +276,13 @@ class App {
     // iOS Safari page pinch-zoom (outside the canvas)
     document.addEventListener('gesturestart', (e) => e.preventDefault());
 
+    const unlock = () => sfx.unlock();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    const mute = $('b-mute');
+    const syncMute = () => { mute.textContent = sfx.muted ? 'Muted' : 'Sound'; mute.classList.toggle('on', sfx.muted); };
+    mute.onclick = () => { sfx.setMuted(!sfx.muted); syncMute(); };
+    syncMute();
     $('b-speed').onclick = () => this.cycleSpeed();
     $('b-pause').onclick = () => { this.ui.paused = !this.ui.paused; };
     $('b-send').onclick = () => this.world?.sendWave();
@@ -301,6 +321,7 @@ class App {
         case 'w': if (w.kings[1]) this.act('king', { id: w.kings[1] }); break;
         case 'b': this.act('bond', {}); break;
         case 'h': case '?': screens.helpScreen(this); break;
+        case 'm': $('b-mute').click(); break;
       }
     });
   }
@@ -333,10 +354,10 @@ class App {
         this.ui.kingTargeting = null;
         if (this.touch) { this.ui.hover = null; this.closeDrawer(); }
         break;
-      case 'up': if (t) w.upgrade(t, Number(d.branch)); break;
-      case 'sell': if (t && w.sell(t)) this.ui.selected = null; break;
-      case 'mode': if (t) t.mode = d.mode; break;
-      case 'bond': w.issueBond(); break;
+      case 'up': if (t) sfx.play(w.upgrade(t, Number(d.branch)) ? 'upgrade' : 'error', 0); break;
+      case 'sell': if (t && w.sell(t)) { this.ui.selected = null; sfx.play('sell'); } break;
+      case 'mode': if (t) { t.mode = d.mode; sfx.play('click'); } break;
+      case 'bond': if (w.issueBond()) sfx.play('bond'); break;
       case 'king': {
         const id = d.id;
         if (!w.kingReady(id)) return;
@@ -346,7 +367,7 @@ class App {
           this.ui.mouse = null;
           if (this.touch) this.closeDrawer();
         }
-        else w.useKing(id);
+        else if (w.useKing(id)) sfx.play('king', 0);
         break;
       }
     }

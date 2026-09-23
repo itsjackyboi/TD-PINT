@@ -52,6 +52,29 @@ await step('title screen', async () => {
   await page.waitForSelector('text=Begin the Siege');
   await shot('01-title');
 });
+await step('pixel art loaded; every atlas sprite is non-empty', async () => {
+  await page.waitForFunction(() => document.body.classList.contains('pixel'), null, { timeout: 10000 });
+  const empty = await page.evaluate(async () => {
+    const { sprites, ATLAS } = await import('/src/ui/sprites.js');
+    const c = document.createElement('canvas'); c.width = c.height = 16;
+    const g = c.getContext('2d');
+    return Object.keys(ATLAS).filter((n) => {
+      g.clearRect(0, 0, 16, 16); sprites.draw(g, n, 0, 0);
+      return !g.getImageData(0, 0, 16, 16).data.some((v, i) => i % 4 === 3 && v > 0);
+    });
+  });
+  if (empty.length) throw new Error('blank sprites: ' + empty.join(', '));
+});
+await step('all sound effects decode', async () => {
+  const n = await page.evaluate(async () => {
+    const names = ['build', 'upgrade', 'sell', 'bond', 'shot-bow', 'shot-pike', 'shot-keg', 'shot-tap', 'shot-still', 'shot-light', 'shot-clock', 'death1', 'death2', 'explosion', 'leak', 'king', 'coin', 'boss', 'click', 'error', 'doctrine', 'wave', 'defeat', 'victory'];
+    const ctx = new OfflineAudioContext(1, 1, 22050);
+    let ok = 0;
+    for (const n of names) { const r = await fetch(`/assets/audio/${n}.wav`); await ctx.decodeAudioData(await r.arrayBuffer()); ok++; }
+    return ok;
+  });
+  if (n !== 24) throw new Error(`${n}/24 sounds decoded`);
+});
 await step('setup + start run', async () => {
   await page.click('text=Begin the Siege');
   await page.click('#go');
@@ -117,6 +140,22 @@ await step('defeat screen', async () => {
   await page.evaluate(() => { window.app.ui.speed = 8; });
   await page.waitForSelector('text=Aleforge Has Fallen', { timeout: 60000 });
   await shot('07-defeat');
+});
+
+await step('missing art falls back to the geometric renderer', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errs = [];
+  p2.on('pageerror', (e) => errs.push(String(e)));
+  await p2.route('**/assets/sprites/**', (r) => r.abort());
+  await p2.goto(`http://localhost:${port}/index.html?seed=3`);
+  await p2.click('text=Begin the Siege'); await p2.click('#go');
+  await p2.evaluate(() => { const w = window.app.world; w.placeTower('bow', 25, 6); w.sendWave(); });
+  await p2.waitForTimeout(1500);
+  const st = await p2.evaluate(() => ({ pixel: window.app.renderer.pixel, failed: true, enemies: window.app.world.enemies.length }));
+  await p2.screenshot({ path: join(shots, '08-fallback.png') });
+  await p2.close();
+  if (errs.length) throw new Error('page errors in fallback: ' + errs.join('; '));
+  if (st.pixel) throw new Error('renderer should not be in pixel mode without sprites');
 });
 
 await browser.close();
