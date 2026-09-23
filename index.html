@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Siege of Aleforge</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="res"><span class="lbl">Gold</span><b id="r-gold">0</b></div>
+      <div class="res"><span class="lbl">Ale</span><b id="r-ale">0</b></div>
+      <div class="res"><span class="lbl">Resolve</span><b id="r-resolve">20</b></div>
+      <div class="res"><span class="lbl">Wave</span><b id="r-wave">0/30</b></div>
+      <div class="res small"><span class="lbl">Next payout</span><b id="r-income">—</b></div>
+      <div id="morale"></div>
+      <div class="spacer"></div>
+      <button id="b-speed" title="Speed (F)">1×</button>
+      <button id="b-pause" title="Pause (P)">Pause</button>
+      <button id="b-send" class="primary" title="Send next wave (Space)">Send Wave</button>
+    </header>
+    <main>
+      <div id="stage">
+        <canvas id="game" width="1280" height="720"></canvas>
+        <div id="banner"></div>
+      </div>
+      <aside id="side">
+        <section id="p-info"></section>
+        <section id="p-kings"><h3>Liquor Kings</h3><div id="kings"></div></section>
+        <section id="p-bonds"><h3>Aleforge Bonds</h3><div id="bonds"></div></section>
+        <section id="p-letter"><h3>Intercepted Correspondence</h3><div id="letter"></div></section>
+        <section id="p-log"><h3>The Chancellor's Notes</h3><div id="log"></div></section>
+      </aside>
+    </main>
+    <footer id="buildbar"></footer>
+  </div>
+  <div id="modal" class="hidden"></div>
+  <div id="debug" class="hidden"></div>
+  <script type="module" src="src/ui/main.js"></script>
+</body>
+</html>

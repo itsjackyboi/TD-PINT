@@ -1,0 +1,712 @@
+{
+ "name": "balanced",
+ "target": "clear wave 30 with 5-10 resolve",
+ "plan": [
+  {
+   "build": "bow"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "tap"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "up": "bow",
+   "branch": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "up": "keg",
+   "branch": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "up": "pike",
+   "branch": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "up": "bow",
+   "branch": 1
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "branch": 0
+  },
+  {
+   "up": "still",
+   "branch": 0
+  }
+ ],
+ "reserve": 0,
+ "bonds": [
+  3
+ ],
+ "doctrines": [
+  "miningCharter",
+  "barleyRoad",
+  "hallOfAle",
+  "craftsmenCharter",
+  "gdcAudit",
+  "colorGuardRally"
+ ],
+ "kings": true
+}

@@ -1,0 +1,12 @@
+{
+  "name": "siege-of-aleforge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A punishing permadeath tower defense set in the Pintland Isles.",
+  "scripts": {
+    "serve": "python3 -m http.server 8080",
+    "sim": "node tools/sim.mjs",
+    "test:browser": "node tools/browser-test.mjs"
+  }
+}

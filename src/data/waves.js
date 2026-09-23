@@ -1,0 +1,36 @@
+// 30 fixed waves. Fixed compositions make the siege learnable, not RNG.
+// group: [type, count, gap seconds, start delay seconds, path]
+// path: 'A' north bridge, 'B' Bazaar road, 'AB' alternate.
+export const WAVES = [
+  /* 1 */ [['zealot', 10, 0.9, 0, 'A']],
+  /* 2 */ [['zealot', 14, 0.7, 0, 'AB']],
+  /* 3 */ [['zealot', 12, 0.7, 0, 'A'], ['pamphleteer', 3, 2, 6, 'B']],
+  /* 4 */ [['matron', 2, 3, 0, 'A'], ['zealot', 16, 0.55, 2, 'AB']],
+  /* 5 */ [['picket', 4, 2.5, 0, 'B'], ['zealot', 18, 0.5, 4, 'AB']],
+  /* 6 */ [['infiltrator', 5, 1.8, 0, 'A'], ['zealot', 14, 0.6, 3, 'B'], ['martyr', 4, 1, 8, 'A']],
+  /* 7 */ [['widow', 5, 2.2, 0, 'AB'], ['martyr', 6, 0.9, 5, 'A'], ['pamphleteer', 4, 1.5, 7, 'B']],
+  /* 8 */ [['believer', 1, 0, 0, 'A'], ['picket', 5, 2, 1, 'B'], ['zealot', 22, 0.4, 3, 'AB']],
+  /* 9 */ [['pamphleteer', 8, 1.2, 0, 'AB'], ['infiltrator', 6, 1.4, 4, 'B'], ['matron', 3, 2.5, 6, 'A']],
+  /* 10 */ [['bagman', 1, 0, 0, 'A'], ['zealot', 26, 0.35, 2, 'AB'], ['martyr', 8, 0.8, 6, 'B']],
+  /* 11 */ [['widow', 6, 1.8, 0, 'AB'], ['matron', 4, 2, 2, 'AB'], ['zealot', 16, 0.4, 8, 'AB']],
+  /* 12 */ [['believer', 3, 4, 0, 'A'], ['picket', 6, 2, 0, 'B'], ['infiltrator', 8, 1, 5, 'AB']],
+  /* 13 */ [['zealot', 42, 0.22, 0, 'AB'], ['martyr', 10, 0.6, 5, 'AB']],
+  /* 14 */ [['pamphleteer', 12, 0.9, 0, 'AB'], ['matron', 5, 2, 1, 'AB'], ['widow', 6, 1.5, 6, 'A']],
+  /* 15 */ [['believer', 4, 3, 0, 'AB'], ['picket', 8, 1.6, 0, 'A'], ['bagman', 1, 0, 8, 'B'], ['zealot', 20, 0.35, 10, 'AB']],
+  /* 16 */ [['infiltrator', 14, 0.8, 0, 'AB'], ['martyr', 12, 0.6, 4, 'AB'], ['matron', 4, 2, 6, 'B']],
+  /* 17 */ [['widow', 12, 1.2, 0, 'AB'], ['matron', 6, 1.8, 3, 'AB'], ['zealot', 30, 0.3, 8, 'AB']],
+  /* 18 */ [['believer', 6, 2.5, 0, 'AB'], ['picket', 10, 1.4, 0, 'AB'], ['pamphleteer', 10, 1, 6, 'AB']],
+  /* 19 */ [['martyr', 20, 0.5, 0, 'AB'], ['infiltrator', 12, 0.9, 3, 'AB'], ['matron', 6, 1.5, 5, 'A']],
+  /* 20 */ [['bagman', 2, 6, 0, 'AB'], ['believer', 6, 2, 3, 'AB'], ['zealot', 50, 0.2, 6, 'AB']],
+  /* 21 */ [['widow', 16, 1, 0, 'AB'], ['picket', 12, 1.2, 4, 'AB'], ['matron', 8, 1.4, 6, 'AB']],
+  /* 22 */ [['pamphleteer', 18, 0.7, 0, 'AB'], ['infiltrator', 16, 0.7, 3, 'AB'], ['martyr', 16, 0.5, 6, 'AB']],
+  /* 23 */ [['believer', 10, 1.8, 0, 'AB'], ['matron', 8, 1.5, 0, 'AB'], ['zealot', 40, 0.25, 5, 'AB']],
+  /* 24 */ [['widow', 20, 0.9, 0, 'AB'], ['martyr', 20, 0.5, 4, 'AB'], ['picket', 14, 1, 8, 'AB']],
+  /* 25 */ [['bagman', 3, 5, 0, 'AB'], ['believer', 12, 1.5, 2, 'AB'], ['infiltrator', 20, 0.6, 6, 'AB']],
+  /* 26 */ [['zealot', 80, 0.12, 0, 'AB'], ['matron', 10, 1.2, 3, 'AB'], ['martyr', 24, 0.4, 6, 'AB']],
+  /* 27 */ [['believer', 12, 1.6, 0, 'AB'], ['picket', 16, 1, 0, 'AB'], ['pamphleteer', 20, 0.6, 4, 'AB']],
+  /* 28 */ [['widow', 24, 0.8, 0, 'AB'], ['infiltrator', 24, 0.5, 3, 'AB'], ['matron', 12, 1, 6, 'AB'], ['bagman', 2, 4, 10, 'AB']],
+  /* 29 */ [['believer', 20, 1.2, 0, 'AB'], ['martyr', 30, 0.4, 3, 'AB'], ['zealot', 60, 0.15, 6, 'AB'], ['matron', 12, 1, 8, 'AB']],
+  /* 30 */ [['plinket', 1, 0, 0, 'A'], ['zealot', 30, 0.4, 4, 'AB'], ['picket', 10, 1.5, 10, 'AB'], ['matron', 6, 2, 16, 'AB']],
+];
+export const BOSS_WAVE = 30;

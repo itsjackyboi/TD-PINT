@@ -1,0 +1,314 @@
+{
+ "name": "turtle",
+ "target": "no upgrades or economy: should stall in the mid-game (waves 12-20)",
+ "plan": [
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "still"
+  }
+ ],
+ "reserve": 0,
+ "bonds": [],
+ "doctrines": [
+  "conscription",
+  "colorGuardRally",
+  "craftsmenCharter"
+ ],
+ "kings": true
+}
