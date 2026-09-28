@@ -1,0 +1,194 @@
+{
+ "name": "fresh (starter towers, tier cap 2)",
+ "profile": "fresh",
+ "hero": "seamus",
+ "target": "clears Beginner often, Intermediate ~half, Expert rarely",
+ "loop": 26,
+ "bonds": [
+  3
+ ],
+ "doctrines": [
+  "miningCharter",
+  "barleyRoad",
+  "hallOfAle",
+  "craftsmenCharter",
+  "conscription",
+  "gdcAudit",
+  "alchemy",
+  "shantyPact"
+ ],
+ "plan": [
+  {
+   "build": "pike"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "hero": true
+  },
+  {
+   "up": "pike",
+   "path": 0
+  },
+  {
+   "up": "pike",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "build": "tap"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "keg",
+   "path": 1
+  },
+  {
+   "up": "keg",
+   "path": 1
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "cellar"
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "item": "powderkeg"
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 1
+  },
+  {
+   "up": "spinner",
+   "path": 1
+  },
+  {
+   "build": "tap"
+  },
+  {
+   "up": "tap",
+   "path": 0
+  },
+  {
+   "up": "tap",
+   "path": 0
+  },
+  {
+   "build": "cellar"
+  },
+  {
+   "up": "cellar",
+   "path": 0
+  },
+  {
+   "up": "cellar",
+   "path": 0
+  }
+ ]
+}

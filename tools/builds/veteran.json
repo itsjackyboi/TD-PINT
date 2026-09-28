@@ -1,0 +1,357 @@
+{
+ "name": "veteran (everything unlocked)",
+ "profile": "veteran",
+ "hero": "seamus",
+ "target": "clears most maps; freeplay 40-60",
+ "loop": 63,
+ "bonds": [
+  3
+ ],
+ "doctrines": [
+  "miningCharter",
+  "barleyRoad",
+  "hallOfAle",
+  "craftsmenCharter",
+  "conscription",
+  "gdcAudit",
+  "alchemy",
+  "shantyPact"
+ ],
+ "plan": [
+  {
+   "build": "pike"
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "pike"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "hero": true
+  },
+  {
+   "up": "pike",
+   "path": 0
+  },
+  {
+   "up": "pike",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "build": "tap"
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "keg",
+   "path": 1
+  },
+  {
+   "up": "keg",
+   "path": 1
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "build": "cellar"
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "farm"
+  },
+  {
+   "up": "keg",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "build": "hook"
+  },
+  {
+   "up": "hook",
+   "path": 0,
+   "to": 2
+  },
+  {
+   "up": "spinner",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "farm"
+  },
+  {
+   "up": "farm",
+   "path": 0
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "build": "garrison"
+  },
+  {
+   "up": "garrison",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 1,
+   "to": 3
+  },
+  {
+   "build": "mortar"
+  },
+  {
+   "up": "mortar",
+   "path": 0,
+   "to": 2
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 1,
+   "to": 3
+  },
+  {
+   "build": "farm"
+  },
+  {
+   "up": "farm",
+   "path": 0,
+   "to": 2
+  },
+  {
+   "build": "repeater"
+  },
+  {
+   "up": "repeater",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0,
+   "to": 2
+  },
+  {
+   "up": "bow",
+   "path": 0,
+   "to": 4
+  },
+  {
+   "up": "keg",
+   "path": 0,
+   "to": 4
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "build": "witch"
+  },
+  {
+   "up": "witch",
+   "path": 0,
+   "to": 2
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "up": "repeater",
+   "path": 0,
+   "to": 4
+  },
+  {
+   "up": "spinner",
+   "path": 0,
+   "to": 4
+  },
+  {
+   "build": "cellar"
+  },
+  {
+   "up": "cellar",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "item": "powderkeg"
+  },
+  {
+   "build": "still"
+  },
+  {
+   "up": "still",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "up": "witch",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "caltrop"
+  },
+  {
+   "up": "caltrop",
+   "path": 0,
+   "to": 3
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 1,
+   "to": 2
+  },
+  {
+   "up": "witch",
+   "path": 0,
+   "to": 4
+  }
+ ],
+ "freeplay": true
+}

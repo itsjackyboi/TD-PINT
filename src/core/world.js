@@ -1,21 +1,23 @@
 // The simulation. No DOM access — the browser game and tools/sim.mjs both drive this.
 import { makeRng } from './rng.js';
 import { SpatialHash } from './spatial.js';
-import { buildMap, DISTRICTS, TILE, COLS, W, H } from './map.js';
-import { TOWERS, towerStats, SELL_REFUND } from '../data/towers.js';
-import { ENEMIES, hpMult } from '../data/enemies.js';
-import { WAVES, BOSS_WAVE } from '../data/waves.js';
+import { buildMap, TILE, COLS, ROWS, W, H } from './map.js';
+import { TOWERS, TOWER_ORDER, towerStats, canCrosspath, SELL_REFUND } from '../data/towers.js';
+import { ENEMIES, MODIFIERS, hpMult } from '../data/enemies.js';
+import { CAMPAIGN_WAVES, BOSS_TYPES } from '../data/waves.js';
 import { DOCTRINES } from '../data/doctrines.js';
-import { KINGS } from '../data/kings.js';
-import { BBL, LETTER_TEMPLATES, PLINKET_P1_LINES } from '../data/lore.js';
+import { HEROES, HERO_COST, HERO_XP, heroScale } from '../data/heroes.js';
+import { ITEMS, ITEMS_PER_WAVE } from '../data/items.js';
+import { updateTower, computeEffective, canSee } from './towers.js';
+import { buildQueue } from './waves.js';
 
-export const START_GOLD = 300;
+export const START_GOLD = 350;
 export const START_ALE = 20;
 export const START_RESOLVE = 20;
 export const START_MORALE = 75;
 const AURA_TICK = 0.25;
 const MAX_EFFECTS = 400;
-const LETTER_TYPES = ['zealot', 'matron', 'picket', 'believer', 'infiltrator', 'pamphleteer', 'martyr', 'widow', 'bagman'];
+const MAX_PROJECTILES = 1500;
 
 export class World {
   constructor(opts = {}) {
@@ -23,18 +25,21 @@ export class World {
     this.rng = makeRng(this.seed);
     this.headless = !!opts.headless;
     this.mandates = opts.mandates || [];
-    this.kings = opts.kings || ['seamus', 'buke'];
-    this.unlocks = opts.unlocks || { towers: [], doctrines: [] };
-    this.map = buildMap();
-    this.activePaths = ['A', 'B'];
+    this.heroId = opts.hero || null;
+    this.unlocks = opts.unlocks || { towers: ['pike', 'keg', 'bow', 'tap'], tiers: {}, heroes: ['seamus', 'buke'] };
+    this.waveOverride = opts.waves || null; // tutorial
+    this.campaignWaves = opts.waves ? opts.waves.length : CAMPAIGN_WAVES;
+    this.map = buildMap(opts.map || 'aleforge');
+    this.mapId = this.map.id;
+    this.activePaths = [...this.map.baseLanes];
 
     this.time = 0;
     this.wave = 0;
-    this.gold = START_GOLD - (this.has('rumpsLedger') ? 90 : 0);
+    this.gold = opts.gold ?? START_GOLD - (this.has('rumpsLedger') ? 90 : 0);
     this.ale = START_ALE;
     this.resolve = START_RESOLVE;
-    this.morale = DISTRICTS.map(() => START_MORALE);
-    this.insurgentFlag = DISTRICTS.map(() => false);
+    this.morale = this.map.districts.map(() => START_MORALE);
+    this.insurgentFlag = this.map.districts.map(() => false);
     this.bonds = [];
     this.bondsIssued = 0;
     this.noInterestUntil = 0;
@@ -44,6 +49,8 @@ export class World {
     this.towerGrid = new Map();
     this.projectiles = [];
     this.effects = [];
+    this.items = [];
+    this.itemsThisWave = 0;
     this.enemyPool = [];
     this.projPool = [];
     this.spawnBuffer = [];
@@ -53,31 +60,30 @@ export class World {
     this.turnedTowers = [];
     this.auraT = 0;
     this.uid = 1;
+    this.hero = null;
+    this.timers = { chug: 0, hangover: 0, muster: 0, longarm: 0, kegparty: 0, drown: 0, sabotage: 0, faces: 0, flood: 0, zero: 0, hallowed: 0 };
+    this.revealAll = 0;
+    this.hallowed = null;
 
     this.events = [];
     this.doctrines = [];
     this.pendingDoctrine = null;
-    this.kingState = {};
-    for (const k of this.kings) this.kingState[k] = { cd: 0, used: false };
-    this.chugT = 0;
-    this.hangoverT = 0;
-    this.oracleCharges = 0;
+    this.seenTypes = new Set();
+    this.runUnlocked = new Set(this.unlocks.towers.filter((t) => TOWERS[t] && !TOWERS[t].unlock.wave));
     this.leakCount = 0;
     this.leakLog = [];
-    this.stats = { kills: 0, leaks: 0, goldEarned: 0, dmgByType: {}, bondsIssued: 0, defaults: 0, insurgencies: 0 };
+    this.stats = { kills: 0, leaks: 0, goldEarned: 0, dmgByType: {}, bondsIssued: 0, defaults: 0, insurgencies: 0, plinket: false, itemsUsed: 0 };
     this.over = false;
     this.won = false;
+    this.freeplay = false;
     this.boss = null;
     this.invincible = false; // debug
     this.recomputeMods();
-    this.letter = this.makeLetter(1);
-    this.emit('bbl', BBL.start);
+    this.checkRunUnlocks();
   }
 
   has(mandate) { return this.mandates.includes(mandate); }
-
   emit(type, text, extra) { this.events.push({ type, text, ...extra }); }
-
   fx(e) {
     if (this.headless || this.effects.length >= MAX_EFFECTS) return;
     e.t = 0;
@@ -88,14 +94,15 @@ export class World {
   recomputeMods() {
     const m = {
       incomeMult: 0, enemySpeed: 0, revealAll: false, interestCapMult: 0, aleIncome: 0, moraleRegenMult: 0,
-      costMult: 0, sellRefund: SELL_REFUND, bowPierce: 0, bowDmg: 0, pikeDmg: 0, bondRate: 0, enemyHp: 0,
-      rangeMult: 0, noSell: false, bountyMult: 0, leakTax: false,
+      costMult: 0, sellRefund: SELL_REFUND, typeDmg: {}, dtypeDmg: {}, bondRate: 0, enemyHp: 0,
+      rangeMult: 0, noSell: false, bountyMult: 0, leakTax: false, incomeTypes: 0,
     };
     for (const id of this.doctrines) {
       const d = DOCTRINES[id].mods;
       for (const k in d) {
         if (typeof d[k] === 'boolean') m[k] = m[k] || d[k];
         else if (k === 'sellRefund') m.sellRefund = Math.min(m.sellRefund, d[k]);
+        else if (typeof d[k] === 'object') for (const kk in d[k]) m[k][kk] = (m[k][kk] || 0) + d[k][kk];
         else m[k] += d[k];
       }
     }
@@ -103,85 +110,126 @@ export class World {
     if (this.has('rotoTightens')) m.bondRate += 0.15;
     if (this.has('zeal')) m.enemyHp += 0.15;
     if (this.has('zealotry')) m.enemySpeed += 0.12;
-    m.kingCost = this.has('hungover') ? 1.5 : 1;
     m.detectMult = this.has('holiday') ? 0.5 : 1;
     m.regen = this.has('amnesty') ? 0.01 : 0;
     m.moraleThreshold = this.has('presses') ? 40 : 30;
     m.pamphletMult = this.has('presses') ? 2 : 1;
+    m.abilityCd = this.has('hungover') ? 1.5 : 1;
     this.mods = m;
     for (const t of this.towers) this.refreshStats(t);
   }
 
-  cost(base) { return Math.round(base * (1 + this.mods.costMult)); }
+  // discount from Garrison quartermasters covering tile (tx, ty)
+  discountAt(x, y) {
+    let d = 0;
+    for (const t of this.towers) {
+      const disc = t.s.aura?.discount;
+      if (disc && (t.x - x) ** 2 + (t.y - y) ** 2 <= t.s.range * t.s.range) d = Math.max(d, disc);
+    }
+    return d;
+  }
+  cost(base, x, y) {
+    const disc = x != null ? this.discountAt(x, y) : 0;
+    return Math.round(base * (1 + this.mods.costMult) * (1 - disc));
+  }
 
   // ---------------------------------------------------------------- towers
-  towerUnlocked(type) {
-    const def = TOWERS[type];
-    return !def.locked || this.unlocks.towers.includes(type);
+  towerAvailable(type) { return this.runUnlocked.has(type); }
+
+  checkRunUnlocks() {
+    for (const type of TOWER_ORDER) {
+      const u = TOWERS[type].unlock;
+      if (u.wave && this.wave >= u.wave && !this.runUnlocked.has(type)) {
+        this.runUnlocked.add(type);
+        this.emit('unlock', `${TOWERS[type].name} is now available.`, { tower: type });
+      }
+    }
   }
 
   canPlace(type, tx, ty) {
     const def = TOWERS[type];
-    if (!def || !this.towerUnlocked(type)) return 'locked';
-    if (!this.map.buildable(tx, ty)) return 'blocked';
+    if (!def || !this.towerAvailable(type)) return 'locked';
+    if (!this.map.buildable(tx, ty, def.water ? 'water' : 'land')) return def.water ? 'water' : 'blocked';
     if (this.towerGrid.has(ty * COLS + tx)) return 'occupied';
-    if (def.max && this.towers.filter((t) => t.type === type).length >= def.max) return 'max';
-    if (this.gold < this.cost(def.cost)) return 'gold';
+    const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
+    if (this.gold < this.cost(def.cost, x, y)) return 'gold';
     if ((def.aleCost || 0) > this.ale) return 'ale';
     return null;
+  }
+
+  newTower(type, def, tx, ty, extra) {
+    const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
+    const t = {
+      id: this.uid++, type, def, tx, ty, x, y, tiers: [0, 0], s: null, eff: null, auras: [],
+      cd: 0, mode: 'first', invested: 0, disabledT: 0, soberT: 0, turnedT: 0, plinketMarked: false, plinketBuffT: 0,
+      tonic: null, tonicT: 0, abilityT: {}, dmg: 0, kills: 0, district: this.map.districtAt(x, y), aim: null, ...extra,
+    };
+    this.towers.push(t);
+    this.towerGrid.set(ty * COLS + tx, t);
+    return t;
   }
 
   placeTower(type, tx, ty) {
     if (this.over || this.canPlace(type, tx, ty)) return null;
     const def = TOWERS[type];
-    const c = this.cost(def.cost);
+    const c = this.cost(def.cost, (tx + 0.5) * TILE, (ty + 0.5) * TILE);
     this.gold -= c;
     this.ale -= def.aleCost || 0;
-    const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
-    const t = {
-      id: this.uid++, type, def, tx, ty, x, y, branch: null, tier: 0, s: null,
-      cd: 0, mode: def.base.attack === 'splash' ? 'strong' : 'first', invested: c,
-      disabledT: 0, soberT: 0, turnedT: 0, plinketMarked: false, plinketBuffT: 0,
-      auraRate: 0, auraDmg: 0, dmg: 0, kills: 0, district: this.map.districtAt(x, y),
-    };
+    const t = this.newTower(type, def, tx, ty, { invested: c, mode: def.base.proj === 'shell' ? 'strong' : 'first' });
     this.refreshStats(t);
-    this.towers.push(t);
-    this.towerGrid.set(ty * COLS + tx, t);
-    this.fx({ kind: 'ring', x, y, r: 20, max: 0.4, color: def.color });
+    computeEffective(this, t);
+    this.fx({ kind: 'ring', x: t.x, y: t.y, r: 20, max: 0.4, color: def.color });
     return t;
   }
 
   refreshStats(t) {
-    const s = towerStats(t.type, t.branch, t.tier);
-    if (s.range) s.range *= 1 + this.mods.rangeMult;
-    if (t.type === 'bow') { s.pierce = (s.pierce || 0) + this.mods.bowPierce; s.dmg *= 1 + this.mods.bowDmg; }
-    if (t.type === 'pike') s.dmg *= 1 + this.mods.pikeDmg;
-    s.detectRange = s.detect ? s.range * this.mods.detectMult : 0;
-    t.s = s;
+    if (t.hero) {
+      const h = HEROES[t.heroId];
+      const sc = heroScale(t.level);
+      const s = structuredClone(h.base);
+      s.dmg = (s.dmg || 0) * sc.dmg;
+      s.rate = (s.rate || 0) * sc.rate;
+      s.range = (s.range || 0) + sc.range;
+      s.abilities = h.abilities.filter((a) => t.level >= a.level);
+      t.s = s;
+      return;
+    }
+    t.s = towerStats(t.type, t.tiers);
   }
 
-  upgradeCost(t, branch) {
-    if (t.tier >= 3) return null;
-    if (t.branch != null && t.branch !== branch) return null;
-    return this.cost(t.def.branches[branch].tiers[t.tier].cost);
+  tierCap(type) { return this.unlocks.tiers?.[type] ?? 2; }
+
+  // why an upgrade is unavailable, or null if it can be bought
+  upgradeBlock(t, path) {
+    if (t.hero) return 'hero';
+    if (t.tiers[path] >= 4) return 'max';
+    if (!canCrosspath(t.tiers, path)) return 'crosspath';
+    if (t.tiers[path] + 1 > this.tierCap(t.type)) return 'xp';
+    return null;
   }
 
-  upgrade(t, branch) {
-    const c = this.upgradeCost(t, branch);
-    if (c == null || this.gold < c || this.over) return false;
+  upgradeCost(t, path) {
+    if (t.hero || t.tiers[path] >= 4) return null;
+    return this.cost(t.def.paths[path].tiers[t.tiers[path]].cost, t.x, t.y);
+  }
+
+  upgrade(t, path) {
+    if (this.over || this.upgradeBlock(t, path)) return false;
+    const c = this.upgradeCost(t, path);
+    if (this.gold < c) return false;
     this.gold -= c;
     t.invested += c;
-    t.branch = branch;
-    t.tier++;
+    t.tiers[path]++;
     this.refreshStats(t);
+    computeEffective(this, t);
     this.fx({ kind: 'ring', x: t.x, y: t.y, r: 26, max: 0.5, color: '#ffe08a' });
     return true;
   }
 
-  sellValue(t) { return Math.floor(t.invested * this.mods.sellRefund); }
+  sellValue(t) { return t.hero ? 0 : Math.floor(t.invested * this.mods.sellRefund); }
 
   sell(t) {
-    if (this.mods.noSell || this.over) return false;
+    if (this.mods.noSell || this.over || t.hero) return false;
     this.gold += this.sellValue(t);
     this.towers.splice(this.towers.indexOf(t), 1);
     this.towerGrid.delete(t.ty * COLS + t.tx);
@@ -190,260 +238,108 @@ export class World {
 
   towerAt(tx, ty) { return this.towerGrid.get(ty * COLS + tx) || null; }
 
-  // ---------------------------------------------------------------- economy
-  bondQuote() {
-    const principal = 150;
-    const rate = 0.2 + 0.15 * this.bondsIssued + this.mods.bondRate;
-    return { principal, rate, due: Math.round(principal * (1 + rate)), dueWave: Math.max(this.wave, 1) + 5 };
+  // ---------------------------------------------------------------- hero
+  canPlaceHero(tx, ty) {
+    if (!this.heroId) return 'none';
+    if (this.hero) return 'placed';
+    if (!this.map.buildable(tx, ty, 'land')) return 'blocked';
+    if (this.towerGrid.has(ty * COLS + tx)) return 'occupied';
+    if (this.gold < HERO_COST) return 'gold';
+    return null;
   }
 
-  canIssueBond() { return !this.over && this.wave <= 24; }
-
-  issueBond() {
-    if (!this.canIssueBond()) return false;
-    const q = this.bondQuote();
-    this.gold += q.principal;
-    this.bonds.push({ due: q.due, dueWave: q.dueWave, rate: q.rate });
-    this.bondsIssued++;
-    this.stats.bondsIssued++;
-    this.emit('msg', `Issued an Aleforge Bond: +${q.principal}g now, ${q.due}g due after wave ${q.dueWave} (${Math.round(q.rate * 100)}% interest).`);
-    return true;
+  placeHero(tx, ty) {
+    if (this.over || this.canPlaceHero(tx, ty)) return null;
+    this.gold -= HERO_COST;
+    const h = HEROES[this.heroId];
+    const t = this.newTower('hero', h, tx, ty, { hero: true, heroId: this.heroId, level: 1, xp: 0, invested: HERO_COST });
+    this.refreshStats(t);
+    computeEffective(this, t);
+    this.hero = t;
+    this.fx({ kind: 'ring', x: t.x, y: t.y, r: 30, max: 0.6, color: '#ffd35a' });
+    return t;
   }
 
-  avgMorale() { return this.morale.reduce((a, b) => a + b, 0) / this.morale.length; }
-
-  addMoraleAll(n) { for (let i = 0; i < this.morale.length; i++) this.addMorale(i, n); }
-
-  addMorale(i, n) {
-    this.morale[i] = Math.max(0, Math.min(100, this.morale[i] + n));
-  }
-
-  incomePreview(n = this.wave) {
-    const base = 60 + 7 * n;
-    const moraleF = Math.max(0.3, Math.min(1, this.avgMorale() / 100));
-    const income = Math.round(base * moraleF * (1 + this.mods.incomeMult));
-    const cap = Math.round(25 * (1 + this.mods.interestCapMult));
-    const interest = n > this.noInterestUntil ? Math.min(Math.floor(Math.max(0, this.gold) * 0.05), cap) : 0;
-    let springGold = 0, springAle = 0;
-    for (const t of this.towers) { springGold += t.s.goldIncome || 0; springAle += t.s.aleIncome || 0; }
-    const ale = Math.max(0, 12 + this.mods.aleIncome + springAle);
-    return { income, interest, springGold, ale, cap };
-  }
-
-  endOfWave(n) {
-    const p = this.incomePreview(n);
-    const gold = p.income + p.interest + p.springGold;
-    this.gold += gold;
-    this.stats.goldEarned += gold;
-    this.ale += p.ale;
-    for (const t of this.towers) if (t.s.moraleCost && t.district >= 0) this.addMorale(t.district, -t.s.moraleCost);
-    const regen = 8 * (1 + this.mods.moraleRegenMult);
-    this.addMoraleAll(regen);
-
-    let paid = 0;
-    for (const b of this.bonds.filter((b) => b.dueWave === n)) {
-      if (this.gold >= b.due) { this.gold -= b.due; paid += b.due; }
-      else {
-        this.gold = 0;
-        this.addMoraleAll(-40);
-        this.stats.defaults++;
-        this.emit('bbl', BBL.default);
-      }
+  heroXp(amount) {
+    const t = this.hero;
+    if (!t || t.level >= 10) return;
+    t.xp += amount;
+    while (t.level < 10 && t.xp >= HERO_XP[t.level]) {
+      t.level++;
+      this.refreshStats(t);
+      this.fx({ kind: 'ring', x: t.x, y: t.y, r: 34, max: 0.8, color: '#ffd35a' });
+      const unlocked = HEROES[t.heroId].abilities.find((a) => a.level === t.level);
+      this.emit('heroLevel', `${HEROES[t.heroId].name} reached level ${t.level}${unlocked ? ` — ${unlocked.name} unlocked` : ''}.`, { level: t.level });
     }
-    if (paid) this.emit('bbl', BBL.bondDue + ` (−${paid}g)`);
-    this.bonds = this.bonds.filter((b) => b.dueWave !== n);
-    this.emit('waveEnd', `Wave ${n} held. +${p.income}g tithes, +${p.interest}g interest${p.springGold ? `, +${p.springGold}g spring` : ''}, +${p.ale} ale.`, { wave: n });
-
-    if (n === BOSS_WAVE) {
-      this.won = true;
-      this.over = true;
-      this.emit('bbl', BBL.victory);
-      this.emit('victory', 'Aleforge stands.');
-      return;
-    }
-    if (n % 5 === 0) this.offerDoctrines();
   }
 
-  // ---------------------------------------------------------------- doctrines
-  doctrineAvailable(id) {
-    const d = DOCTRINES[id];
-    return !this.doctrines.includes(id) && (!d.locked || this.unlocks.doctrines.includes(id));
+  // ---------------------------------------------------------------- abilities
+  // every activatable ability: tier-4 tower upgrades and the hero's
+  abilityList() {
+    const list = [];
+    for (const t of this.towers) for (const a of t.s.abilities || []) list.push({ t, a, cd: t.abilityT['cd_' + a.id] || 0 });
+    return list;
   }
 
-  offerDoctrines() {
-    const pool = Object.keys(DOCTRINES).filter((id) => this.doctrineAvailable(id));
-    this.pendingDoctrine = this.rng.shuffle(pool).slice(0, 3);
-    this.emit('doctrine', BBL.doctrine);
+  abilityReady(t, id) {
+    const a = (t.s.abilities || []).find((x) => x.id === id);
+    return !!a && !this.over && !((t.abilityT['cd_' + id] || 0) > 0);
   }
 
-  pickDoctrine(id) {
-    if (!this.pendingDoctrine || !this.pendingDoctrine.includes(id)) return false;
-    this.doctrines.push(id);
-    this.pendingDoctrine = null;
-    this.recomputeMods();
-    DOCTRINES[id].now?.(this);
-    this.emit('msg', `Doctrine adopted: ${DOCTRINES[id].name}.`);
-    return true;
-  }
-
-  // ---------------------------------------------------------------- waves
-  canSendWave() {
-    if (this.over || this.pendingDoctrine || this.wave >= WAVES.length) return false;
-    return this.activeWaves.every((w) => w.qi >= w.queue.length);
-  }
-
-  sendWave() {
-    if (!this.canSendWave()) return false;
-    const early = this.activeWaves.length > 0;
-    if (early) {
-      const bonus = 10 + this.wave;
-      this.gold += bonus;
-      this.emit('msg', `Called the next wave early: +${bonus}g.`);
-    }
-    const n = ++this.wave;
-    if (this.has('oweBlock') && n >= 8 && !this.activePaths.includes('C')) {
-      this.activePaths.push('C');
-      this.emit('msg', 'The Owe Block causeway is open. A third column marches from the south.');
-    }
-    const queue = [];
-    for (const [type, count, gap, delay, path] of WAVES[n - 1]) {
-      for (let i = 0; i < count; i++) {
-        const p = path === 'AB' ? (i % 2 ? 'B' : 'A') : path;
-        queue.push({ t: delay + i * gap, type, path: p, d0: 0 });
-        // Owe Block Riots: every third marcher brings a friend up the causeway
-        if (this.activePaths.includes('C') && type !== 'plinket' && i % 3 === 2) queue.push({ t: delay + i * gap + 0.3, type, path: 'C', d0: 0 });
-      }
-    }
-    queue.sort((a, b) => a.t - b.t);
-    const aw = { n, queue, qi: 0, t: 0, alive: 0 };
-    this.activeWaves.push(aw);
-    this.insurgentFlag.fill(false);
-    for (let i = 0; i < DISTRICTS.length; i++) if (this.morale[i] < this.mods.moraleThreshold) this.raiseInsurgency(i, aw);
-
-    this.emit('waveStart', `Wave ${n}${n === BOSS_WAVE ? ' — THE SIEGE OF ALEFORGE' : ''}.`, { wave: n });
-    if (n === 10) this.emit('bbl', BBL.wave10);
-    if (WAVES[n - 1].some((g) => g[0] === 'bagman')) this.emit('bbl', BBL.bagman);
-    if (n === BOSS_WAVE) this.emit('bbl', BBL.preBoss);
-    this.letter = this.makeLetter(n + 1);
-    return true;
-  }
-
-  raiseInsurgency(i, aw) {
-    aw = aw || this.activeWaves[this.activeWaves.length - 1];
-    if (!aw || this.insurgentFlag[i]) return;
-    this.insurgentFlag[i] = true;
-    const d = DISTRICTS[i];
-    const path = this.map.paths[d.nodePath];
-    const d0 = path.distOf((d.node[0] + 0.5) * TILE, (d.node[1] + 0.5) * TILE);
-    const count = 3 + Math.floor(this.wave / 4);
-    for (let k = 0; k < count; k++) aw.queue.push({ t: aw.t + 1 + k * 0.7, type: 'insurgent', path: d.nodePath, d0 });
-    aw.queue.sort((a, b) => a.t - b.t);
-    // queue entries before qi were already consumed; re-sorting only reorders the unconsumed tail
-    // because new entries are all later than aw.t
-    this.stats.insurgencies++;
-    // the uprising vents some of the anger — punishment, not a permanent death spiral
-    this.addMorale(i, 15);
-    this.emit('bbl', BBL.insurgency(d.name));
-  }
-
-  // ---------------------------------------------------------------- letters
-  makeLetter(n) {
-    if (n > WAVES.length) return null;
-    if (n === BOSS_WAVE) {
-      return {
-        wave: n, truthful: true, sig: '— S.P.', verified: null,
-        text: 'I am the leader of this organization and I will not be treated otherwise! We strike when I say we strike. And yes, finally hear my name, loyal MAMAists.',
-      };
-    }
-    const counts = {};
-    const paths = new Set();
-    for (const [type, count, , , path] of WAVES[n - 1]) {
-      counts[type] = (counts[type] || 0) + count;
-      paths.add(path);
-    }
-    let types = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 2);
-    let pathKey = paths.size === 1 && !paths.has('AB') ? [...paths][0] : 'AB';
-    const truthful = !(n >= 10 && this.rng.chance(1 / 3));
-    const shown = types.map((t) => ({ t, c: counts[t] }));
-    if (!truthful) {
-      const decoys = LETTER_TYPES.filter((t) => !counts[t]);
-      const swap = this.rng.int(0, shown.length - 1);
-      shown[swap] = { t: this.rng.pick(decoys), c: Math.max(2, Math.round(counts[types[swap]] * this.rng.range(0.4, 1.2))) };
-      pathKey = pathKey === 'AB' ? this.rng.pick(['A', 'B']) : pathKey === 'A' ? 'B' : 'A';
-    }
-    const pathText = pathKey === 'AB' ? 'both bridges' : this.map.paths[pathKey].name;
-    const typeText = shown.map(({ t, c }) => `${c} ${ENEMIES[t].name}${c > 1 ? 's' : ''}`).join(' and ');
-    const tpl = this.rng.pick(LETTER_TEMPLATES);
-    const letter = {
-      wave: n, truthful, sig: truthful ? '— J.R.' : '— JR', verified: null,
-      text: tpl.replace('{types}', typeText).replace('{path}', pathText),
-    };
-    if (this.oracleCharges > 0) { this.oracleCharges--; letter.verified = truthful ? 'AUTHENTIC' : 'FORGED'; }
-    return letter;
-  }
-
-  // ---------------------------------------------------------------- kings
-  kingCost(id) { return Math.round(KINGS[id].ale * this.mods.kingCost); }
-
-  kingReady(id) {
-    const st = this.kingState[id];
-    if (!st || this.over) return false;
-    if (KINGS[id].once && st.used) return false;
-    return st.cd <= 0 && this.ale >= this.kingCost(id);
-  }
-
-  useKing(id, target) {
-    if (!this.kingReady(id)) return false;
-    const k = KINGS[id];
+  useAbility(t, id, target) {
+    if (!this.abilityReady(t, id)) return false;
+    const a = t.s.abilities.find((x) => x.id === id);
+    const all = () => this.enemies.filter((e) => e.alive && !e.untargetable);
     switch (id) {
-      case 'seamus':
-        for (const e of this.enemies) {
-          if (!e.alive || e.untargetable) continue;
-          this.damage(e, 220, null, { pierce: 99 });
-          if (!e.def.heavy) this.knockback(e, 60);
-        }
-        this.fx({ kind: 'flash', x: W / 2, y: H / 2, r: 0, max: 0.6, color: '#b0643a' });
-        break;
-      case 'buke':
-        this.chugT = 8;
-        this.hangoverT = 0;
-        break;
-      case 'jagerbauhm': {
+      // towers
+      case 'longarm': this.timers.longarm = 10; break;
+      case 'kegstorm': for (let i = 0; i < 24; i++) { const e = this.rng.pick(all()); if (!e) break; this.spawnProjectile({ kind: 'shell', x: e.x, y: -20, tx: e.x, ty: e.y, dmg: 300, splash: 50, dtype: 'explosive', src: t, speed: 700, color: '#b0643a' }); } break;
+      case 'supply': { const g = 400 + Math.floor(this.rng.next() * 300); this.gold += g; this.emit('toast', `Supply Drop: +${g} gold.`); break; }
+      case 'drown': for (const e of all()) this.applySlow(e, 0.75, 6); this.timers.drown = 6; break;
+      case 'whirl': t.abilityT.whirl = 5; break;
+      case 'zero': for (const e of all()) this.freeze(e, 4, 0); break;
+      case 'blind': for (const e of all()) if (!e.boss) this.stun(e, 2.5); this.fx({ kind: 'flash', x: 0, y: 0, r: 0, max: 0.5, color: '#fffbe0' }); break;
+      case 'mutiny': t.abilityT.mutiny = 0.2; t.cd = 0; break;
+      case 'sabotage': this.timers.sabotage = 12; break;
+      case 'board': { let b = null; for (const e of all()) if (e.boss && (!b || e.hp > b.hp)) b = e; if (!b) return false; this.damage(b, b.hp * 0.4, t, { raw: true }); break; }
+      case 'storm': for (const id2 of this.activePaths) { const p = this.map.paths[id2]; for (let d = 40; d < p.total - 40; d += 70) { const o = { x: 0, y: 0 }; p.posAt(d, o); this.placePile(t, o.x, o.y); } } break;
+      case 'muster': this.timers.muster = 10; break;
+      case 'awe': for (const e of all()) { this.stun(e, 3); this.damage(e, 150, t, { dtype: 'explosive' }); } this.fx({ kind: 'flash', x: 0, y: 0, r: 0, max: 0.5, color: '#ff9b3d' }); break;
+      case 'rockets': t.abilityT.rockets = 10; break;
+      case 'groundzero': for (const e of all()) this.damage(e, 800, t, { dtype: 'explosive' }); this.fx({ kind: 'flash', x: 0, y: 0, r: 0, max: 0.8, color: '#ffffff' }); break;
+      case 'timestop': for (const e of all()) { if (e.boss) this.applySlow(e, 0.5, 5); else this.freeze(e, 5, 0, true); } break;
+      case 'price': for (const e of all()) if (!e.boss) this.damage(e, e.hp * 0.8, t, { raw: true }); break;
+      // heroes
+      case 'avalanche': for (const e of all()) { this.damage(e, 220, t, { dtype: 'explosive' }); if (e.alive) this.knockback(e, 60); } this.fx({ kind: 'flash', x: 0, y: 0, r: 0, max: 0.6, color: '#b0643a' }); break;
+      case 'kegparty': this.timers.kegparty = 10; break;
+      case 'chug': this.timers.chug = 8; this.timers.hangover = 0; break;
+      case 'dive': this.spatial.query(t.x, t.y, 150, (e) => { if (e.alive) { this.stun(e, 3); this.damage(e, 400, t, { dtype: 'explosive' }); } }); this.fx({ kind: 'ring', x: t.x, y: t.y, r: 150, max: 0.6, color: '#e0b93c' }); break;
+      case 'barricade': {
         if (!target) return false;
         const p = this.nearestPathPoint(target.x, target.y);
         if (!p || p.dist > 40) return false;
         this.barricades.push({ x: p.x, y: p.y, t: 5 });
         break;
       }
-      case 'guinnie': {
-        if (this.boss && this.boss.alive && !this.boss.untargetable) {
-          this.damage(this.boss, this.boss.maxHp * 0.06, null, { pierce: 99, raw: true });
-          this.fx({ kind: 'ring', x: this.boss.x, y: this.boss.y, r: 40, max: 0.5, color: '#3fbf5f' });
-          break;
-        }
+      case 'hallowed': this.hallowed = { x: t.x, y: t.y, r: 160 }; this.timers.hallowed = 8; break;
+      case 'grudge': {
+        const boss = all().find((e) => e.boss);
+        if (boss) { this.damage(boss, boss.maxHp * 0.06, t, { raw: true }); break; }
         let best = null;
-        for (const e of this.enemies) if (e.alive && !e.untargetable && !e.def.boss && (!best || e.hp > best.hp)) best = e;
+        for (const e of all()) if (!best || e.hp > best.hp) best = e;
         if (!best) return false;
-        this.fx({ kind: 'ring', x: best.x, y: best.y, r: 30, max: 0.5, color: '#3fbf5f' });
-        this.kill(best, null);
+        this.kill(best, t);
         break;
       }
-      case 'jack':
-        this.oracleCharges = 3;
-        if (this.letter && !this.letter.verified) {
-          this.oracleCharges--;
-          this.letter.verified = this.letter.truthful ? 'AUTHENTIC' : 'FORGED';
-        }
-        for (const e of this.enemies) if (e.alive) this.applyMark(e, 0.25, 6, 0);
-        break;
-      case 'jp':
-        this.resolve += 3;
-        break;
+      case 'faces': this.timers.faces = 10; this.revealAll = 10; for (const e of all()) this.applyMark(e, 0.3, 10, 0); break;
+      case 'ledger': this.gold += 150; for (const e of all()) this.applyMark(e, 0.25, 6, 0); break;
+      case 'mercantile': this.gold += 500; break;
+      case 'spill': this.resolve += 2; break;
+      case 'flood': this.timers.flood = 8; break;
+      default: return false;
     }
-    this.ale -= this.kingCost(id);
-    this.kingState[id].cd = k.cd;
-    if (k.once) this.kingState[id].used = true;
-    this.emit('msg', `${k.name}: ${k.ability}!`);
+    t.abilityT['cd_' + id] = a.cd * this.mods.abilityCd;
+    this.emit('ability', `${a.name}!`, { id });
     return true;
   }
 
@@ -455,49 +351,309 @@ export class World {
       const d = path.distOf(x, y);
       path.posAt(d, out);
       const dist = Math.hypot(out.x - x, out.y - y);
-      if (!best || dist < best.dist) best = { x: out.x, y: out.y, dist };
+      if (!best || dist < best.dist) best = { x: out.x, y: out.y, dist, path, d };
     }
     return best;
   }
 
+  // default mortar aim: halfway along the first lane
+  defaultAim() {
+    const p = this.map.paths[this.activePaths[0]];
+    const o = { x: 0, y: 0 };
+    return p.posAt(p.total * 0.6, o);
+  }
+
+  // a point on the road within range of tower t (smart: the one furthest along)
+  roadPointNear(t, range, smart) {
+    const pts = [];
+    const o = { x: 0, y: 0 };
+    for (const id of this.activePaths) {
+      const p = this.map.paths[id];
+      for (let d = 0; d < p.total; d += 20) {
+        p.posAt(d, o);
+        if ((o.x - t.x) ** 2 + (o.y - t.y) ** 2 <= range * range) pts.push({ x: o.x, y: o.y, k: d / p.total });
+      }
+    }
+    if (!pts.length) return null;
+    if (smart) return pts.reduce((a, b) => (b.k > a.k ? b : a));
+    return this.rng.pick(pts);
+  }
+
+  // ---------------------------------------------------------------- road items & piles
+  canPlaceItem(type, x, y) {
+    const it = ITEMS[type];
+    if (!it || this.over) return 'none';
+    if (this.itemsThisWave >= ITEMS_PER_WAVE) return 'limit';
+    if (this.ale < it.ale) return 'ale';
+    const p = this.nearestPathPoint(x, y);
+    if (!p || p.dist > 26) return 'road';
+    return null;
+  }
+
+  placeItem(type, x, y) {
+    if (this.canPlaceItem(type, x, y)) return false;
+    const it = ITEMS[type];
+    const p = this.nearestPathPoint(x, y);
+    this.ale -= it.ale;
+    this.itemsThisWave++;
+    this.stats.itemsUsed++;
+    this.items.push({ type, x: p.x, y: p.y, hits: it.hits || 0, life: it.life, hitIds: [], src: null, dmg: it.dmg || 0, dtype: it.dtype, radius: it.radius });
+    return true;
+  }
+
+  placePile(t, x, y) {
+    const s = t.s;
+    this.items.push({
+      type: 'pile', x: x + (this.rng.next() - 0.5) * 10, y: y + (this.rng.next() - 0.5) * 10, hits: s.pile.hits, life: s.pile.life, hitIds: [],
+      src: t, dmg: s.dmg * t.eff.dmgMul + t.eff.dmgAdd, dtype: s.dtype, shred: t.eff.shred, explode: s.pile.explode || 0, radius: 14,
+    });
+  }
+
+  updateItems(dt) {
+    let j = 0;
+    for (const it of this.items) {
+      it.life -= dt;
+      let keep = it.life > 0;
+      if (keep && it.type === 'stickyale') {
+        this.spatial.query(it.x, it.y, it.radius, (e) => { if (e.alive) this.applySlow(e, ITEMS.stickyale.slow, 0.3); });
+      } else if (keep && it.type === 'powderkeg') {
+        let boom = false;
+        this.spatial.query(it.x, it.y, it.radius, (e) => { if (e.alive && !e.untargetable) boom = true; return boom; });
+        if (boom) {
+          this.spatial.query(it.x, it.y, ITEMS.powderkeg.blast, (e) => { if (e.alive) this.damage(e, it.dmg, null, { dtype: 'explosive' }); });
+          this.fx({ kind: 'ring', x: it.x, y: it.y, r: ITEMS.powderkeg.blast, max: 0.5, color: '#ff9b3d' });
+          keep = false;
+        }
+      } else if (keep) { // caltrops & smithy piles
+        this.spatial.query(it.x, it.y, it.radius, (e) => {
+          if (!e.alive || e.untargetable || it.hits <= 0 || it.hitIds.includes(e.uid)) return;
+          it.hitIds.push(e.uid);
+          it.hits--;
+          this.damage(e, it.dmg, it.src, { dtype: it.dtype, shred: it.shred });
+        });
+        if (it.hits <= 0) {
+          if (it.explode) {
+            this.spatial.query(it.x, it.y, 50, (e) => { if (e.alive) this.damage(e, it.explode, it.src, { dtype: 'explosive' }); });
+            this.fx({ kind: 'ring', x: it.x, y: it.y, r: 50, max: 0.4, color: '#ff9b3d' });
+          }
+          keep = false;
+        }
+        if (it.hitIds.length > 60) it.hitIds.splice(0, 30);
+      }
+      if (keep) this.items[j++] = it;
+    }
+    this.items.length = j;
+  }
+
+  // ---------------------------------------------------------------- economy
+  bondQuote() {
+    let disc = 0;
+    for (const t of this.towers) disc = Math.max(disc, t.s.bondDiscount || 0);
+    const principal = 150;
+    const rate = Math.max(0.05, 0.2 + 0.15 * this.bondsIssued + this.mods.bondRate - disc);
+    return { principal, rate, due: Math.round(principal * (1 + rate)), dueWave: Math.max(this.wave, 1) + 5 };
+  }
+
+  canIssueBond() { return !this.over && (this.freeplay || this.wave <= this.campaignWaves - 6); }
+
+  issueBond() {
+    if (!this.canIssueBond()) return false;
+    const q = this.bondQuote();
+    this.gold += q.principal;
+    this.bonds.push({ due: q.due, dueWave: q.dueWave, rate: q.rate });
+    this.bondsIssued++;
+    this.stats.bondsIssued++;
+    return true;
+  }
+
+  avgMorale() { return this.morale.reduce((a, b) => a + b, 0) / (this.morale.length || 1); }
+  addMoraleAll(n) { for (let i = 0; i < this.morale.length; i++) this.addMorale(i, n); }
+  addMorale(i, n) { if (i >= 0 && i < this.morale.length) this.morale[i] = Math.max(0, Math.min(100, this.morale[i] + n)); }
+
+  incomePreview(n = this.wave) {
+    const base = 60 + 7 * Math.min(n, 40);
+    const moraleF = Math.max(0.3, Math.min(1, this.avgMorale() / 100));
+    const income = Math.round(base * moraleF * (1 + this.mods.incomeMult));
+    let capBonus = 0, towerGold = 0, towerAle = 0;
+    for (const t of this.towers) {
+      capBonus = Math.max(capBonus, t.s.interestCap || 0);
+      if (t.s.income) towerGold += t.s.income * ((t.type === 'farm' || t.type === 'ship') ? 1 + this.mods.incomeTypes : 1);
+      towerAle += t.s.aleIncome || 0;
+    }
+    const cap = Math.round(25 * (1 + this.mods.interestCapMult)) + capBonus;
+    const interest = n > this.noInterestUntil ? Math.min(Math.floor(Math.max(0, this.gold) * 0.05), cap) : 0;
+    const ale = Math.max(0, 15 + this.mods.aleIncome + towerAle);
+    return { income, interest, towerGold: Math.round(towerGold), ale, cap };
+  }
+
+  endOfWave(n) {
+    const p = this.incomePreview(n);
+    const gold = p.income + p.interest + p.towerGold;
+    this.gold += gold;
+    this.stats.goldEarned += gold;
+    this.ale += p.ale;
+    this.addMoraleAll(8 * (1 + this.mods.moraleRegenMult));
+    this.heroXp(40 + 12 * n);
+
+    let paid = 0;
+    for (const b of this.bonds.filter((b) => b.dueWave === n)) {
+      if (this.gold >= b.due) { this.gold -= b.due; paid += b.due; }
+      else {
+        this.gold = 0;
+        this.addMoraleAll(-40);
+        this.stats.defaults++;
+        this.emit('toast', 'Bond default! Every district loses 40 morale.', { warn: true });
+      }
+    }
+    if (paid) this.emit('toast', `Bond repaid: −${paid} gold.`);
+    this.bonds = this.bonds.filter((b) => b.dueWave !== n);
+    this.emit('waveEnd', `Wave ${n} held: +${gold} gold, +${p.ale} ale.`, { wave: n, gold });
+
+    if (n === this.campaignWaves && !this.freeplay) {
+      this.won = true;
+      this.over = true;
+      this.emit('victory', 'Aleforge stands.');
+      return;
+    }
+    if (n % 5 === 0 && n < this.campaignWaves && !this.waveOverride) this.offerDoctrines();
+  }
+
+  // After beating the campaign, keep going with endlessly scaling waves.
+  continueFreeplay() {
+    if (!this.won || this.freeplay) return false;
+    this.freeplay = true;
+    this.over = false;
+    this.emit('toast', 'Freeplay: the waves get harder forever. How far can Aleforge hold?');
+    return true;
+  }
+
+  // ---------------------------------------------------------------- doctrines
+  doctrineAvailable(id) { return !this.doctrines.includes(id); }
+
+  offerDoctrines() {
+    const pool = Object.keys(DOCTRINES).filter((id) => this.doctrineAvailable(id));
+    this.pendingDoctrine = this.rng.shuffle(pool).slice(0, 3);
+    this.emit('doctrine', 'Choose a doctrine.');
+  }
+
+  pickDoctrine(id) {
+    if (!this.pendingDoctrine || !this.pendingDoctrine.includes(id)) return false;
+    this.doctrines.push(id);
+    this.pendingDoctrine = null;
+    this.recomputeMods();
+    DOCTRINES[id].now?.(this);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- waves
+  canSendWave() {
+    if (this.over || this.pendingDoctrine) return false;
+    if (!this.freeplay && this.wave >= this.campaignWaves) return false;
+    return this.activeWaves.every((w) => w.qi >= w.queue.length);
+  }
+
+  sendWave() {
+    if (!this.canSendWave()) return false;
+    if (this.activeWaves.length) {
+      const bonus = 10 + Math.min(this.wave, 40);
+      this.gold += bonus;
+    }
+    const n = ++this.wave;
+    this.itemsThisWave = 0;
+    if (this.has('oweBlock') && n >= 8 && this.map.extraLane && !this.activePaths.includes(this.map.extraLane)) {
+      this.activePaths.push(this.map.extraLane);
+      this.emit('toast', 'The Owe Block lane is open: a third column joins every wave.', { warn: true });
+    }
+    const aw = { n, queue: buildQueue(this, n), qi: 0, t: 0, alive: 0 };
+    this.activeWaves.push(aw);
+    this.insurgentFlag.fill(false);
+    for (let i = 0; i < this.morale.length; i++) if (this.morale[i] < this.mods.moraleThreshold) this.raiseInsurgency(i, aw);
+    this.checkRunUnlocks();
+    const boss = aw.queue.find((q) => BOSS_TYPES.includes(q.type));
+    this.emit('waveStart', `Wave ${n}${boss ? ` — ${ENEMIES[boss.type].name}` : ''}`, { wave: n, boss: boss?.type });
+    return true;
+  }
+
+  raiseInsurgency(i, aw) {
+    aw = aw || this.activeWaves[this.activeWaves.length - 1];
+    if (!aw || this.insurgentFlag[i]) return;
+    this.insurgentFlag[i] = true;
+    const d = this.map.districts[i];
+    const pathId = this.map.paths[d.nodePath] ? d.nodePath : this.activePaths[0];
+    const path = this.map.paths[pathId];
+    const d0 = path.distOf((d.node[0] + 0.5) * TILE, (d.node[1] + 0.5) * TILE);
+    const count = 3 + Math.floor(Math.min(this.wave, 40) / 4);
+    for (let k = 0; k < count; k++) aw.queue.push({ t: aw.t + 1 + k * 0.7, type: 'insurgent', path: pathId, d0, mods: [] });
+    aw.queue.sort((a, b) => a.t - b.t);
+    this.stats.insurgencies++;
+    this.addMorale(i, 15);
+    this.emit('toast', `Insurgents rise in ${d.name}! (morale fell below ${this.mods.moraleThreshold}%)`, { warn: true });
+  }
+
   // ---------------------------------------------------------------- enemies
-  spawnEnemy(type, pathId, d0, waveN, aw) {
+  spawnEnemy(type, pathId, d0, waveN, aw, mods = []) {
     const def = ENEMIES[type];
     const e = this.enemyPool.pop() || {};
-    const scale = def.boss ? 1 : hpMult(waveN);
-    const hp = def.hp * scale * (1 + this.mods.enemyHp);
+    const traits = new Set(def.traits);
+    let hpX = 1, speedX = 1, regrow = def.regrow || 0;
+    for (const m of mods) {
+      const M = MODIFIERS[m];
+      if (!M || traits.has('boss')) continue;
+      for (const tr of M.traits) traits.add(tr);
+      if (M.hp) hpX *= M.hp;
+      if (M.speed) speedX *= M.speed;
+      if (M.regrow) regrow = Math.max(regrow, M.regrow);
+    }
+    const boss = traits.has('boss');
+    const scale = boss ? (waveN > 30 ? hpMult(waveN) / hpMult(30) : 1) : hpMult(waveN);
+    const hp = def.hp * scale * hpX * (1 + this.mods.enemyHp) * (this.map.def.hpScale || 1);
     Object.assign(e, {
-      uid: this.uid++, type, def, path: this.map.paths[pathId], d: d0, x: 0, y: 0,
-      hp, maxHp: hp, shield: 0, maxShield: 0, armor: def.armor, alive: true,
-      slowAmt: 0, slowT: 0, slowImmuneT: 0, burnDps: 0, burnT: 0, burnVuln: 0, burnSrc: null,
-      mark: 0, markT: 0, markBounty: 0, revealedT: 0, stunT: 0, cleansed: false,
+      uid: this.uid++, type, def, path: this.map.paths[pathId], d: d0, x: 0, y: 0, traits, mods,
+      hp, maxHp: hp, shield: 0, maxShield: 0, alive: true, speed: def.speed * speedX, curSpeed: 0,
+      hidden: traits.has('hidden'), armored: traits.has('armored'), boss, elite: traits.has('elite'), regrow,
+      slowAmt: 0, slowT: 0, frozenT: 0, frostAmt: 0, frostT: 0, burnDps: 0, burnT: 0, burnVuln: 0, burnSrc: null, acid: 0,
+      mark: 0, markT: 0, markBounty: 0, revealedT: 0, stunT: 0,
       untargetable: false, auraT: this.rng.range(0, 1), tickT: 0, sabotaged: 0, sabotagedIds: [],
-      district: -1, aw, waveN, phase: 0, phaseT: 0, turnT: 0, summonT: 0, lineT: 0,
+      district: -1, aw, waveN, phase: 0, phaseT: 0, turnT: 0, summonT: 0,
     });
     e.path.posAt(e.d, e);
     if (aw) aw.alive++;
     this.enemies.push(e);
-    if (def.boss) {
+    const key = type + (mods.length ? ':' + mods.join(',') : '');
+    if (!this.seenTypes.has(key)) {
+      this.seenTypes.add(key);
+      this.emit('newEnemy', ENEMIES[type].name, { enemy: type, traits: [...traits] });
+    }
+    if (type === 'plinket') {
       this.boss = e;
       e.untargetable = true;
       e.phase = 1;
-      this.emit('bbl', PLINKET_P1_LINES[0]);
+      this.emit('boss', 'MINISTER SUSAN PLINKET', { phase: 1 });
+    } else if (boss) {
+      this.emit('boss', def.name.toUpperCase(), { phase: 0 });
     }
     return e;
   }
 
   applySlow(e, amt, dur) {
-    if (e.slowImmuneT > 0) return;
-    if (e.def.heavy) amt *= 0.5;
-    amt = Math.min(0.7, amt);
+    if (e.boss) amt *= 0.5;
+    amt = Math.min(0.8, amt);
     if (e.slowT <= 0 || amt > e.slowAmt) e.slowAmt = amt;
     e.slowT = Math.max(e.slowT, dur);
   }
 
+  freeze(e, dur, frost, force) {
+    if (e.boss) { this.applySlow(e, 0.6, dur); return; }
+    if (force || e.frozenT <= 0) e.frozenT = Math.max(e.frozenT, dur);
+    if (frost) { e.frostAmt = frost; e.frostT = dur + 3; }
+  }
+
+  stun(e, dur) { if (!e.boss) e.stunT = Math.max(e.stunT, dur); }
+
   applyBurn(e, dps, dur, src) {
     if (e.burnT <= 0 || dps >= e.burnDps) { e.burnDps = dps; e.burnSrc = src; }
     e.burnT = Math.max(e.burnT, dur);
-    if (src && src.s.burnVuln) e.burnVuln = Math.max(e.burnVuln, src.s.burnVuln);
+    if (src?.s?.burnVuln) e.burnVuln = Math.max(e.burnVuln, src.s.burnVuln);
   }
 
   applyMark(e, amt, dur, bounty) {
@@ -506,39 +662,40 @@ export class World {
     if (bounty) e.markBounty = Math.max(e.markBounty, bounty);
   }
 
-  knockback(e, px) {
-    if (e.def.heavy) return;
-    e.d = Math.max(0, e.d - px);
-  }
+  knockback(e, px) { if (!e.boss) e.d = Math.max(0, e.d - px); }
 
-  visible(e) {
-    return !e.def.invisible || e.revealedT > 0 || this.mods.revealAll;
-  }
-
+  // Damage rules (BTD5-style, binary and readable):
+  //   Armored ignores sharp without Shred; frozen enemies ignore sharp without Shred.
   damage(e, amount, src, o = {}) {
-    if (!e.alive || e.untargetable) return;
-    let amt = amount * (1 + (e.markT > 0 ? e.mark : 0));
-    if (e.burnT > 0 && e.burnVuln) amt *= 1 + e.burnVuln;
-    if (!o.burn && !o.raw) {
-      const armor = Math.max(0, e.armor - (o.pierce || 0));
-      amt = Math.max(amt * 0.2, amt - armor);
+    if (!e.alive || e.untargetable || amount <= 0) return;
+    const dtype = o.dtype || 'magic';
+    if (!o.raw && dtype === 'sharp' && !o.shred && (e.armored || e.frozenT > 0)) {
+      if (!this.headless && this.rng.next() < 0.1) this.fx({ kind: 'ping', x: e.x, y: e.y - 14, r: 0, max: 0.4, color: '#b8c4d0' });
+      return;
     }
-    if (e.shield > 0 && !o.raw) {
-      const sb = o.shieldBreak || 1;
-      const sd = amt * sb;
-      if (sd <= e.shield) { e.shield -= sd; amt = 0; }
-      else { amt = (sd - e.shield) / sb; e.shield = 0; }
+    let amt = amount;
+    if (!o.raw) {
+      amt *= 1 + (e.markT > 0 ? e.mark : 0);
+      if (e.burnT > 0 && e.burnVuln) amt *= 1 + e.burnVuln;
+      if (this.timers.sabotage > 0) amt *= 1.3;
+      if (this.timers.hallowed > 0 && this.hallowed && (e.x - this.hallowed.x) ** 2 + (e.y - this.hallowed.y) ** 2 < this.hallowed.r ** 2) amt *= 2;
+      if (e.curse > 0) amt *= 1 + e.curse;
+      if ((e.boss || e.elite) && o.bossMult) amt *= o.bossMult;
+      amt *= 1 + (this.mods.dtypeDmg[dtype] || 0);
+      if (e.shield > 0) {
+        if (amt <= e.shield) { e.shield -= amt; amt = 0; }
+        else { amt -= e.shield; e.shield = 0; }
+      }
     }
     const dealt = Math.min(e.hp, amt);
     e.hp -= amt;
+    e.lastHitT = this.time;
     if (src) {
       src.dmg += dealt;
-      this.stats.dmgByType[src.type] = (this.stats.dmgByType[src.type] || 0) + dealt;
-    }
-    if (e.def.cleanse && !e.cleansed && e.hp < e.maxHp / 2 && e.hp > 0) {
-      e.cleansed = true;
-      e.slowT = 0; e.burnT = 0; e.slowImmuneT = 3;
-      this.fx({ kind: 'ring', x: e.x, y: e.y, r: 24, max: 0.4, color: '#ffffff' });
+      const key = src.hero ? 'hero' : src.type;
+      this.stats.dmgByType[key] = (this.stats.dmgByType[key] || 0) + dealt;
+      if (src.hero) this.heroXp(dealt * 0.12);
+      if (src.s?.voodoo && !e.boss && !e.elite && this.rng.next() < src.s.voodoo) e.hp = 0;
     }
     if (e.hp <= 0) this.kill(e, src);
   }
@@ -547,30 +704,27 @@ export class World {
     if (!e.alive) return;
     e.alive = false;
     e.hp = 0;
-    const bounty = Math.round(e.def.bounty * (1 + 0.02 * e.waveN) * (1 + this.mods.bountyMult) * (1 + (e.markT > 0 ? e.markBounty : 0)));
+    let bounty = e.def.bounty * (1 + 0.02 * Math.min(e.waveN, 40)) * (1 + this.mods.bountyMult) * (1 + (e.markT > 0 ? e.markBounty : 0));
+    if (this.hero?.s.bountyAura && (e.x - this.hero.x) ** 2 + (e.y - this.hero.y) ** 2 < this.hero.s.auraRange ** 2) bounty *= 1 + this.hero.s.bountyAura;
+    bounty = Math.round(bounty);
     this.gold += bounty;
     this.stats.goldEarned += bounty;
     this.stats.kills++;
     if (src) src.kills++;
     if (e.aw) e.aw.alive--;
-    this.fx({ kind: 'burst', x: e.x, y: e.y, r: e.def.size + 6, max: 0.3, color: e.def.color });
+    this.fx({ kind: 'burst', x: e.x, y: e.y, r: e.def.size + 6, max: 0.3, color: '#e0d0b0' });
     const blast = e.def.deathBlast;
     if (blast) {
-      for (const t of this.towers) {
-        if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= blast.range ** 2) t.disabledT = Math.max(t.disabledT, blast.dur);
-      }
+      for (const t of this.towers) if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= blast.range ** 2) t.disabledT = Math.max(t.disabledT, blast.dur);
       this.fx({ kind: 'ring', x: e.x, y: e.y, r: blast.range, max: 0.5, color: '#ff9b3d' });
     }
-    const split = e.def.split;
-    if (split) {
-      for (let i = 0; i < split.count; i++) {
-        this.spawnBuffer.push({ type: split.type, path: e.path.id, d0: Math.max(0, e.d - 16 * i), waveN: e.waveN, aw: e.aw });
-      }
-    }
-    if (e.def.boss) {
-      this.boss = null;
-      this.emit('msg', 'Susan Plinket has fallen.');
-    }
+    const spawnKids = (type, count) => {
+      for (let i = 0; i < count; i++) this.spawnBuffer.push({ type, path: e.path.id, d0: Math.max(0, e.d - 14 * i), waveN: e.waveN, aw: e.aw, mods: e.boss ? [] : e.mods });
+    };
+    if (e.def.split) spawnKids(e.def.split.type, e.def.split.count);
+    if (e.def.spill) for (const [type, count] of e.def.spill) spawnKids(type, count);
+    if (e.type === 'plinket') { this.boss = null; this.stats.plinket = true; }
+    if (e.boss) this.emit('toast', `${e.def.name} destroyed!`);
   }
 
   leak(e) {
@@ -580,18 +734,106 @@ export class World {
     this.leakCount++;
     this.stats.leaks++;
     this.leakLog.push({ t: this.time, wave: this.wave, type: e.type, path: e.path.id, hp: Math.round(e.hp) });
-    if (this.leakCount === 1) this.emit('bbl', BBL.firstLeak);
-    let cost = e.def.boss ? this.resolve : e.def.leak;
+    let cost = e.boss ? this.resolve : e.def.leak + (e.traits.has('fortified') ? 1 : 0);
     if (this.mods.leakTax && this.leakCount % 3 === 0) cost++;
     this.resolve -= cost;
-    if (e.def.steal) {
-      const s = Math.floor(Math.max(0, this.gold) * e.def.steal);
-      this.gold -= s;
-      this.emit('msg', `The Bagman made it through. −${s}g from the Treasury.`);
-    }
+    if (e.def.steal) this.gold -= Math.floor(Math.max(0, this.gold) * e.def.steal);
     this.addMoraleAll(-3);
-    this.fx({ kind: 'flash', x: W - 60, y: H - 140, r: 0, max: 0.3, color: '#ff3030' });
-    if (e.def.boss) this.emit('msg', 'Susan Plinket has reached the castle.');
+    this.fx({ kind: 'flash', x: 0, y: 0, r: 0, max: 0.3, color: '#ff3030' });
+  }
+
+  // ---------------------------------------------------------------- projectiles
+  spawnProjectile(o) {
+    if (this.projectiles.length >= MAX_PROJECTILES) return;
+    const p = this.projPool.pop() || { hitIds: [] };
+    const hitIds = p.hitIds;
+    hitIds.length = 0;
+    for (const k in p) if (k !== 'hitIds') delete p[k];
+    Object.assign(p, { travel: 0, hits: 0, target: null, maxTravel: 400, pierce: 1 }, o);
+    p.hitIds = hitIds;
+    this.projectiles.push(p);
+  }
+
+  updateProjectiles(dt) {
+    let j = 0;
+    for (let i = 0; i < this.projectiles.length; i++) {
+      const p = this.projectiles[i];
+      if (this.stepProjectile(p, dt)) this.projectiles[j++] = p;
+      else { p.target = null; p.src = null; p.home = null; this.projPool.push(p); }
+    }
+    this.projectiles.length = j;
+  }
+
+  hitWith(p, e) {
+    const src = p.src;
+    this.damage(e, p.dmg, src, { dtype: p.dtype, shred: p.shred, bossMult: p.bossMult });
+    if (!e.alive && !p.slow) return;
+    if (p.slow) {
+      this.applySlow(e, p.slow, p.slowDur);
+      if (p.acid) e.acid = Math.max(e.acid, p.acid);
+    }
+    if (p.burn && e.alive) this.applyBurn(e, p.burn, p.burnDur, src);
+    if (p.stun && e.alive) this.stun(e, p.stun);
+    if (p.distract && e.alive && this.rng.next() < p.distract) this.knockback(e, p.knockback);
+  }
+
+  explode(p) {
+    const r = p.splash || 30;
+    this.spatial.query(p.x, p.y, r, (e) => {
+      if (!e.alive || e.untargetable) return;
+      this.hitWith(p, e);
+      if (e.alive && p.knockback && !p.distract) this.knockback(e, p.knockback);
+      if (p.flare) e.revealedT = Math.max(e.revealedT, 2);
+    });
+    this.fx({ kind: 'ring', x: p.x, y: p.y, r, max: 0.3, color: p.color || '#ff9b3d' });
+    if (p.cluster) {
+      for (let i = 0; i < p.cluster; i++) {
+        const a = (i / p.cluster) * Math.PI * 2;
+        this.spawnProjectile({ ...p, kind: 'shell', x: p.x, y: p.y, tx: p.x + Math.cos(a) * 45, ty: p.y + Math.sin(a) * 45, cluster: 0, dmg: p.dmg * 0.5, splash: 28, speed: 260, hitIds: undefined });
+      }
+    }
+  }
+
+  stepProjectile(p, dt) {
+    const step = (p.speed || 500) * dt;
+    if (p.kind === 'shell') {
+      const dx = p.tx - p.x, dy = p.ty - p.y, dist = Math.hypot(dx, dy);
+      if (dist > step) { p.x += (dx / dist) * step; p.y += (dy / dist) * step; return true; }
+      p.x = p.tx; p.y = p.ty;
+      this.explode(p);
+      return false;
+    }
+    if (p.kind === 'hook') {
+      const tx = p.leg === 0 ? p.tx : p.home?.x ?? p.x, ty = p.leg === 0 ? p.ty : p.home?.y ?? p.y;
+      const dx = tx - p.x, dy = ty - p.y, dist = Math.hypot(dx, dy);
+      if (dist > step) { p.x += (dx / dist) * step; p.y += (dy / dist) * step; }
+      else if (p.leg === 0) { p.leg = 1; p.hitIds.length = 0; p.hits = 0; }
+      else return false;
+      this.pierceHits(p, 14);
+      return true;
+    }
+    // dart
+    if (p.homing && p.target && p.target.alive) {
+      const a = Math.atan2(p.target.y - p.y, p.target.x - p.x), cur = Math.atan2(p.vy, p.vx);
+      let d = a - cur; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+      const na = cur + Math.max(-6 * dt, Math.min(6 * dt, d)), sp = Math.hypot(p.vx, p.vy);
+      p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp;
+    }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.travel += step;
+    this.pierceHits(p, 13);
+    return p.hits < p.pierce && p.travel < p.maxTravel && p.x > -30 && p.x < W + 30 && p.y > -30 && p.y < H + 30;
+  }
+
+  pierceHits(p, r) {
+    this.spatial.query(p.x, p.y, r, (e) => {
+      if (!e.alive || e.untargetable || p.hitIds.includes(e.uid)) return;
+      if (p.src && !p.src.dead && e.hidden && !canSee(this, p.src, e)) return;
+      p.hitIds.push(e.uid);
+      if (p.splash && p.kind === 'dart') { this.explode({ ...p, x: e.x, y: e.y, cluster: 0 }); }
+      else this.hitWith(p, e);
+      p.hits++;
+      return p.hits >= p.pierce;
+    });
   }
 
   // ---------------------------------------------------------------- update
@@ -599,22 +841,22 @@ export class World {
     if (this.over || this.pendingDoctrine) return;
     this.time += dt;
 
-    // spawning
     for (const aw of this.activeWaves) {
       aw.t += dt;
       while (aw.qi < aw.queue.length && aw.queue[aw.qi].t <= aw.t) {
         const s = aw.queue[aw.qi++];
-        this.spawnEnemy(s.type, s.path, s.d0, aw.n, aw);
+        this.spawnEnemy(s.type, s.path, s.d0, aw.n, aw, s.mods);
       }
     }
 
-    // timers
-    for (const k in this.kingState) this.kingState[k].cd = Math.max(0, this.kingState[k].cd - dt);
-    if (this.chugT > 0) { this.chugT -= dt; if (this.chugT <= 0) this.hangoverT = 6; }
-    else if (this.hangoverT > 0) this.hangoverT -= dt;
+    for (const k in this.timers) if (this.timers[k] > 0) {
+      this.timers[k] -= dt;
+      if (k === 'chug' && this.timers.chug <= 0) this.timers.hangover = 6;
+    }
+    if (this.revealAll > 0) this.revealAll -= dt;
+    if (this.mods.revealAll) this.revealAll = 1;
     for (let i = this.barricades.length - 1; i >= 0; i--) if ((this.barricades[i].t -= dt) <= 0) this.barricades.splice(i, 1);
 
-    // spatial
     this.spatial.clear();
     for (const e of this.enemies) if (e.alive) this.spatial.insert(e);
 
@@ -622,11 +864,17 @@ export class World {
     if (this.auraT <= 0) { this.auraT += AURA_TICK; this.auraTick(); }
 
     for (const e of this.enemies) if (e.alive) this.updateEnemy(e, dt);
-    for (const t of this.towers) this.updateTower(t, dt);
+    this.updateItems(dt);
+    for (const t of this.towers) {
+      if (t.abilityT.whirl > 0) { // Bilgrat Whirlwind: 40 bottles/s
+        t.whirlAcc = (t.whirlAcc || 0) + dt * 40;
+        while (t.whirlAcc >= 1) { t.whirlAcc--; this.spawnProjectile({ kind: 'dart', x: t.x, y: t.y, vx: 0, vy: 0, src: t, dtype: 'sharp', shred: t.eff.shred, dmg: t.s.dmg * t.eff.dmgMul, pierce: 3, speed: 420, maxTravel: t.eff.range + 20, color: t.def.color, ...(() => { const a = this.rng.next() * Math.PI * 2; return { vx: Math.cos(a) * 420, vy: Math.sin(a) * 420 }; })() }); }
+      }
+      updateTower(this, t, dt);
+    }
     this.updateProjectiles(dt);
     if (this.boss && this.boss.alive) this.updateBoss(this.boss, dt);
 
-    // compact enemies, flush spawn buffer
     let j = 0;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
@@ -635,11 +883,10 @@ export class World {
     }
     this.enemies.length = j;
     if (this.spawnBuffer.length) {
-      for (const s of this.spawnBuffer) this.spawnEnemy(s.type, s.path, s.d0, s.waveN, s.aw);
+      for (const s of this.spawnBuffer) this.spawnEnemy(s.type, s.path, s.d0, s.waveN, s.aw, s.mods);
       this.spawnBuffer.length = 0;
     }
 
-    // effects
     let k = 0;
     for (const f of this.effects) if ((f.t += dt) < f.max) this.effects[k++] = f;
     this.effects.length = k;
@@ -651,7 +898,6 @@ export class World {
       return;
     }
 
-    // wave completion
     for (let i = this.activeWaves.length - 1; i >= 0; i--) {
       const aw = this.activeWaves[i];
       if (aw.qi >= aw.queue.length && aw.alive <= 0) {
@@ -663,67 +909,69 @@ export class World {
   }
 
   auraTick() {
-    for (const t of this.towers) { t.auraRate = 0; t.auraDmg = 0; }
+    for (const t of this.towers) t.auras.length = 0;
     this.turnedTowers.length = 0;
+    const holiday = this.mods.detectMult;
     for (const t of this.towers) {
       const a = t.s.aura;
+      const ar = t.s.auraRange || t.s.range;
       if (a && t.disabledT <= 0 && t.turnedT <= 0) {
-        const r2 = a.range * a.range;
-        for (const o of this.towers) {
-          if ((o.x - t.x) ** 2 + (o.y - t.y) ** 2 <= r2) {
-            o.auraRate = Math.max(o.auraRate, a.rate);
-            o.auraDmg = Math.max(o.auraDmg, a.dmg);
-          }
-        }
+        for (const o of this.towers) if (o !== t && (o.x - t.x) ** 2 + (o.y - t.y) ** 2 <= ar * ar) o.auras.push(a);
       }
-      if (t.s.detectRange && t.disabledT <= 0 && t.turnedT <= 0) {
-        this.spatial.query(t.x, t.y, t.s.detectRange, (e) => { if (e.def.invisible) e.revealedT = AURA_TICK * 2; });
+      if (t.s.reveal && t.disabledT <= 0) {
+        const r = (t.eff?.range || t.s.range) * holiday;
+        this.spatial.query(t.x, t.y, r, (e) => { if (e.hidden) e.revealedT = AURA_TICK * 2; });
+        if (t.s.revealAll) this.revealAll = Math.max(this.revealAll, AURA_TICK * 2);
       }
+      if (t.s.curse) this.spatial.query(t.x, t.y, t.eff?.range || t.s.range, (e) => { e.curse = t.s.curse; e.curseT = AURA_TICK * 2; });
+      if (t.s.chill) this.spatial.query(t.x, t.y, t.eff?.range || t.s.range, (e) => { if (e.alive) this.applySlow(e, t.s.chill, AURA_TICK * 2); });
       if (t.turnedT > 0) this.turnedTowers.push(t);
     }
     for (const e of this.enemies) {
       if (!e.alive) continue;
-      const def = e.def;
-      if (def.soberAura) {
-        const r2 = def.soberAura * def.soberAura;
+      if (e.curseT > 0) e.curseT -= AURA_TICK; else e.curse = 0;
+      if (e.def.soberAura) {
+        const r2 = e.def.soberAura ** 2;
         for (const t of this.towers) if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= r2) t.soberT = AURA_TICK * 2;
       }
     }
-    for (let i = 0; i < DISTRICTS.length; i++) {
-      if (this.morale[i] < this.mods.moraleThreshold && !this.insurgentFlag[i] && this.activeWaves.length) {
-        this.emit('bbl', BBL.lowMorale(DISTRICTS[i].name));
-        this.raiseInsurgency(i);
-      }
+    for (const t of this.towers) computeEffective(this, t);
+    for (let i = 0; i < this.morale.length; i++) {
+      if (this.morale[i] < this.mods.moraleThreshold && !this.insurgentFlag[i] && this.activeWaves.length) this.raiseInsurgency(i);
     }
   }
 
   updateEnemy(e, dt) {
     const def = e.def;
     if (e.slowT > 0) e.slowT -= dt;
-    if (e.slowImmuneT > 0) e.slowImmuneT -= dt;
     if (e.markT > 0) e.markT -= dt;
     if (e.revealedT > 0) e.revealedT -= dt;
     if (e.stunT > 0) e.stunT -= dt;
+    if (e.frostT > 0) e.frostT -= dt;
+    if (e.frozenT > 0) { e.frozenT -= dt; if (e.frozenT <= 0 && e.frostT > 0) this.applySlow(e, e.frostAmt, e.frostT); }
 
     if (e.burnT > 0) {
       e.burnT -= dt;
-      this.damage(e, e.burnDps * dt, e.burnSrc, { burn: true });
+      this.damage(e, e.burnDps * dt, e.burnSrc, { dtype: 'fire' });
       if (!e.alive) return;
     }
+    if (e.acid > 0 && e.slowT > 0) { this.damage(e, e.acid * dt, null, { dtype: 'fire' }); if (!e.alive) return; }
+    else if (e.slowT <= 0) e.acid = 0;
+    if (this.timers.flood > 0) { this.damage(e, 30 * dt, this.hero, { dtype: 'magic' }); if (!e.alive) return; this.applySlow(e, 0.7, 0.2); }
+    // Regrow: heals only after 1.5s without being hit, and never while burning
+    if (e.regrow && e.burnT <= 0 && e.hp < e.maxHp && this.time - (e.lastHitT || 0) > 1.5) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regrow * dt);
     if (this.mods.regen && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * this.mods.regen * dt);
 
-    let speed = def.speed * (1 + this.mods.enemySpeed);
+    let speed = e.speed * (1 + this.mods.enemySpeed);
     if (e.phase === 3) speed *= 1.3;
     if (e.slowT > 0) speed *= 1 - e.slowAmt;
-    if (e.stunT > 0 && !def.heavy) speed = 0;
-    if (!def.boss) {
-      for (const b of this.barricades) if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < 900) { speed = 0; break; }
-    }
+    if (this.timers.sabotage > 0) speed *= 0.5;
+    if ((e.stunT > 0 || e.frozenT > 0) && !e.boss) speed = 0;
+    if (!e.boss) for (const b of this.barricades) if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < 900) { speed = 0; break; }
     if (speed > 0 && this.turnedTowers.length) {
-      for (const t of this.turnedTowers) {
-        if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= (t.s.range || 120) ** 2) { speed *= 1.25; break; }
-      }
+      for (const t of this.turnedTowers) if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= (t.s.range || 120) ** 2) { speed *= 1.25; break; }
     }
+    e.curSpeed = speed;
     e.d += speed * dt;
     if (e.d >= e.path.total) { this.leak(e); return; }
     e.path.posAt(e.d, e);
@@ -735,22 +983,23 @@ export class World {
     if (def.shieldAura && e.auraT <= 0) {
       const sa = def.shieldAura;
       e.auraT = sa.every;
-      const amount = sa.amount * hpMult(e.waveN);
+      const amount = sa.amount * (e.boss ? 1 : hpMult(e.waveN));
       this.spatial.query(e.x, e.y, sa.range, (o) => {
-        if (o.alive && o !== e && !o.def.boss) {
+        if (o.alive && o !== e && !o.boss) {
           o.maxShield = Math.max(o.maxShield, amount * 1.5);
           o.shield = Math.min(amount * 1.5, o.shield + amount);
         }
       });
     }
 
-    if (def.sabotage && e.sabotaged < def.sabotage.max && !this.visible(e)) {
+    if (def.sabotage && e.sabotaged < def.sabotage.max && !(e.revealedT > 0 || this.revealAll > 0)) {
       e.tickT -= dt;
       if (e.tickT <= 0) {
         e.tickT = 0.2;
         const r2 = def.sabotage.range ** 2;
         for (const t of this.towers) {
           if (e.sabotaged >= def.sabotage.max) break;
+          if (t.eff?.detect) continue; // towers that can see it aren't fooled
           if ((t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= r2 && !e.sabotagedIds.includes(t.id)) {
             e.sabotagedIds.push(t.id);
             e.sabotaged++;
@@ -762,214 +1011,30 @@ export class World {
     }
   }
 
-  // ---------------------------------------------------------------- towers
-  towerRate(t) {
-    const sober = t.soberT > 0;
-    let mult = 1;
-    if (!sober) {
-      mult += t.auraRate;
-      if (this.chugT > 0) mult += 0.8;
-    }
-    if (this.hangoverT > 0) mult -= 0.4;
-    if (sober && t.def.ale) mult *= 0.5;
-    return t.s.rate * mult;
-  }
-
-  towerDmgMult(t) {
-    return 1 + (t.soberT > 0 ? 0 : t.auraDmg) + (t.plinketBuffT > 0 ? 0.25 : 0);
-  }
-
-  acquire(t, range, n) {
-    const s = t.s;
-    const min2 = (s.minRange || 0) ** 2;
-    const mode = t.mode;
-    if (n === 1) {
-      let best = null, bestScore = -Infinity;
-      this.spatial.query(t.x, t.y, range, (e) => {
-        if (!e.alive || e.untargetable || !this.visible(e)) return;
-        if (min2 && (e.x - t.x) ** 2 + (e.y - t.y) ** 2 < min2) return;
-        let score;
-        if (mode === 'first') score = e.d - e.path.total;
-        else if (mode === 'last') score = e.path.total - e.d;
-        else if (mode === 'strong') score = e.hp + e.shield;
-        else score = -((e.x - t.x) ** 2 + (e.y - t.y) ** 2);
-        if (score > bestScore) { bestScore = score; best = e; }
-      });
-      return best;
-    }
-    const list = [];
-    this.spatial.query(t.x, t.y, range, (e) => {
-      if (e.alive && !e.untargetable && this.visible(e)) list.push(e);
-    });
-    list.sort((a, b) => (a.path.total - a.d) - (b.path.total - b.d));
-    return list.slice(0, n);
-  }
-
-  updateTower(t, dt) {
-    if (t.disabledT > 0) t.disabledT -= dt;
-    if (t.soberT > 0) t.soberT -= dt;
-    if (t.turnedT > 0) t.turnedT -= dt;
-    if (t.plinketBuffT > 0) t.plinketBuffT -= dt;
-    t.cd -= dt;
-    if (t.cd > 0 || t.disabledT > 0 || t.turnedT > 0) return;
-    const s = t.s;
-    const rate = this.towerRate(t);
-    if (rate <= 0) return;
-    const dmgMult = this.towerDmgMult(t);
-
-    switch (s.attack) {
-      case 'global': {
-        if (!this.enemies.length) return;
-        for (const e of this.enemies) {
-          if (!e.alive) continue;
-          if (s.slow) this.applySlow(e, s.slow, s.slowDur);
-          if (s.dmg) this.damage(e, s.dmg * dmgMult, t, { pierce: 99 });
-          if (s.knockback && e.alive) this.knockback(e, s.knockback);
-        }
-        this.fx({ kind: 'flash', x: t.x, y: t.y, r: 0, max: 0.35, color: '#b58cd9' });
-        break;
-      }
-      case 'pulse': {
-        let hit = false;
-        this.spatial.query(t.x, t.y, s.range, (e) => {
-          if (!e.alive || e.untargetable || !this.visible(e)) return;
-          hit = true;
-          if (s.slow) this.applySlow(e, s.slow, s.slowDur);
-          if (s.dmg) this.damage(e, s.dmg * dmgMult, t);
-          if (s.stagger && e.alive && this.rng.chance(s.stagger)) this.knockback(e, 30);
-        });
-        if (!hit) return;
-        this.fx({ kind: 'ring', x: t.x, y: t.y, r: s.range, max: 0.35, color: t.def.color });
-        break;
-      }
-      case 'hitscan': {
-        const targets = this.acquire(t, s.range, s.marks || 1);
-        const list = Array.isArray(targets) ? targets : targets ? [targets] : [];
-        if (!list.length) return;
-        for (const e of list) {
-          this.applyMark(e, s.mark, s.markDur, s.bountyBonus || 0);
-          this.damage(e, s.dmg * dmgMult, t, { pierce: s.pierce });
-          this.fx({ kind: 'beam', x: t.x, y: t.y, x2: e.x, y2: e.y, max: 0.15, color: t.def.color });
-        }
-        break;
-      }
-      default: {
-        const e = this.acquire(t, s.range, 1);
-        if (!e) return;
-        this.fire(t, e, dmgMult);
-      }
-    }
-    t.cd = 1 / rate;
-  }
-
-  fire(t, e, dmgMult) {
-    const s = t.s;
-    const p = this.projPool.pop() || {};
-    Object.assign(p, {
-      src: t, x: t.x, y: t.y, target: e, tuid: e.uid, tx: e.x, ty: e.y, speed: s.projSpeed || 500,
-      dmg: s.dmg * dmgMult, pierce: s.pierce || 0, splash: s.splash || 0, burn: s.burn || 0, burnDur: s.burnDur || 0,
-      kb: s.knockback || 0, stun: s.stun || 0, shieldBreak: s.shieldBreak || 1,
-      kind: s.attack === 'splash' ? 'shell' : s.penetrate ? 'lance' : 'bullet',
-      pen: s.penetrate || 0, hits: 0, hitIds: p.hitIds || [], travel: 0, maxTravel: s.range * 1.3, vx: 0, vy: 0,
-      color: t.def.color,
-    });
-    p.hitIds.length = 0;
-    if (p.kind === 'lance') {
-      const dx = e.x - t.x, dy = e.y - t.y, len = Math.hypot(dx, dy) || 1;
-      p.vx = (dx / len) * p.speed; p.vy = (dy / len) * p.speed;
-    }
-    this.projectiles.push(p);
-  }
-
-  updateProjectiles(dt) {
-    let j = 0;
-    for (let i = 0; i < this.projectiles.length; i++) {
-      const p = this.projectiles[i];
-      if (this.stepProjectile(p, dt)) this.projectiles[j++] = p;
-      else { p.target = null; p.src = null; this.projPool.push(p); }
-    }
-    this.projectiles.length = j;
-  }
-
-  // returns true if still alive
-  stepProjectile(p, dt) {
-    const step = p.speed * dt;
-    if (p.kind === 'lance') {
-      p.x += p.vx * dt; p.y += p.vy * dt; p.travel += step;
-      this.spatial.query(p.x, p.y, 14, (e) => {
-        if (!e.alive || e.untargetable || !this.visible(e) || p.hitIds.includes(e.uid)) return;
-        p.hitIds.push(e.uid);
-        this.damage(e, p.dmg, p.src, { pierce: p.pierce, shieldBreak: p.shieldBreak });
-        p.hits++;
-        return p.hits >= p.pen;
-      });
-      return p.hits < p.pen && p.travel < p.maxTravel && p.x > -20 && p.x < W + 20 && p.y > -20 && p.y < H + 20;
-    }
-    const tgt = p.target;
-    const live = tgt && tgt.alive && tgt.uid === p.tuid;
-    if (live && p.kind === 'bullet') { p.tx = tgt.x; p.ty = tgt.y; }
-    const dx = p.tx - p.x, dy = p.ty - p.y, dist = Math.hypot(dx, dy);
-    if (dist > step) { p.x += (dx / dist) * step; p.y += (dy / dist) * step; return true; }
-    p.x = p.tx; p.y = p.ty;
-
-    if (p.kind === 'shell') {
-      this.spatial.query(p.x, p.y, p.splash, (e) => {
-        if (!e.alive || e.untargetable) return;
-        this.damage(e, p.dmg, p.src, { pierce: p.pierce });
-        if (e.alive && p.kb) this.knockback(e, p.kb);
-        if (e.alive && p.stun && !e.def.heavy) e.stunT = Math.max(e.stunT, p.stun);
-      });
-      this.fx({ kind: 'ring', x: p.x, y: p.y, r: p.splash, max: 0.3, color: p.color });
-      return false;
-    }
-    // bullet
-    if (!live) return false;
-    const src = p.src;
-    this.damage(tgt, p.dmg, src, { pierce: p.pierce, shieldBreak: p.shieldBreak });
-    if (p.burn) {
-      if (p.splash) {
-        this.spatial.query(p.x, p.y, p.splash, (e) => { if (e.alive && !e.untargetable) this.applyBurn(e, p.burn, p.burnDur, src); });
-        this.fx({ kind: 'ring', x: p.x, y: p.y, r: p.splash, max: 0.3, color: p.color });
-      } else if (tgt.alive) this.applyBurn(tgt, p.burn, p.burnDur, src);
-    }
-    return false;
-  }
-
-  // ---------------------------------------------------------------- boss
+  // ---------------------------------------------------------------- Plinket (wave 30)
   updateBoss(b, dt) {
     b.phaseT += dt;
     const progress = b.d / b.path.total;
     if (b.phase === 1) {
-      const r2 = 170 * 170;
-      for (const t of this.towers) {
-        if ((t.x - b.x) ** 2 + (t.y - b.y) ** 2 <= r2) { t.plinketBuffT = 0.5; t.plinketMarked = true; }
-      }
-      b.lineT += dt;
-      if (b.lineT > 9) { b.lineT = 0; this.emit('bbl', this.rng.pick(PLINKET_P1_LINES)); }
+      for (const t of this.towers) if ((t.x - b.x) ** 2 + (t.y - b.y) ** 2 <= 170 * 170) { t.plinketBuffT = 0.5; t.plinketMarked = true; }
       if (b.phaseT >= 28 || progress >= 0.35) {
         b.phase = 2; b.phaseT = 0;
         b.untargetable = false;
-        b.shield = b.maxShield = 4500 * (1 + this.mods.enemyHp);
-        this.emit('bbl', BBL.bossP2);
-        this.emit('boss', 'JR UNMASKED', { phase: 2 });
+        b.shield = b.maxShield = 4500 * (b.maxHp / 16000);
+        this.emit('boss', 'J.R. UNMASKED', { phase: 2 });
       }
     } else if (b.phase === 2) {
       b.turnT += dt;
       if (b.turnT >= 3.5) {
         b.turnT = 0;
-        const marked = this.towers.filter((t) => t.plinketMarked && t.turnedT <= 0);
-        if (marked.length) {
-          const t = this.rng.pick(marked);
-          t.turnedT = 8;
-          this.fx({ kind: 'ring', x: t.x, y: t.y, r: 24, max: 0.8, color: '#ff5fb0' });
-        }
+        const marked = this.towers.filter((t) => t.plinketMarked && t.turnedT <= 0 && !t.hero);
+        if (marked.length) this.rng.pick(marked).turnedT = 8;
       }
       b.summonT += dt;
       if (b.summonT >= 7) { b.summonT = 0; this.summon(b, [['insurgent', 5]]); }
       if (b.shield <= 0 || progress >= 0.7) {
         b.phase = 3; b.phaseT = 0; b.shield = 0; b.summonT = 0;
-        this.emit('bbl', BBL.bossP3);
-        this.emit('boss', 'SUSAN PLINKET, MAMA', { phase: 3 });
+        this.emit('boss', 'SUSAN PLINKET, FOUNDER OF MAMA', { phase: 3 });
       }
     } else if (b.phase === 3) {
       b.summonT += dt;
@@ -979,20 +1044,19 @@ export class World {
 
   summon(b, groups) {
     for (const [type, count] of groups) {
-      for (let i = 0; i < count; i++) {
-        this.spawnBuffer.push({ type, path: b.path.id, d0: Math.max(0, b.d - 20 - i * 10), waveN: BOSS_WAVE, aw: b.aw });
-      }
+      for (let i = 0; i < count; i++) this.spawnBuffer.push({ type, path: b.path.id, d0: Math.max(0, b.d - 20 - i * 10), waveN: Math.min(b.waveN, 30), aw: b.aw, mods: [] });
     }
-    this.fx({ kind: 'ring', x: b.x, y: b.y, r: 50, max: 0.5, color: '#ff5fb0' });
   }
 
   // ---------------------------------------------------------------- summary
   summary() {
     return {
-      seed: this.seed, wave: this.wave, won: this.won, resolve: this.resolve, kills: this.stats.kills,
-      leaks: this.stats.leaks, goldEarned: this.stats.goldEarned, doctrines: this.doctrines.slice(),
-      mandates: this.mandates.slice(), kings: this.kings.slice(), towers: this.towers.length,
-      heat: this.mandates.length, time: Math.round(this.time),
+      seed: this.seed, map: this.mapId, wave: this.wave, cleared: this.won, freeplay: this.freeplay, resolve: this.resolve,
+      kills: this.stats.kills, leaks: this.stats.leaks, goldEarned: this.stats.goldEarned, doctrines: this.doctrines.slice(),
+      mandates: this.mandates.slice(), hero: this.heroId, heroLevel: this.hero?.level || 0, towers: this.towers.length,
+      heat: this.mandates.length, time: Math.round(this.time), damage: { ...this.stats.dmgByType }, plinket: this.stats.plinket,
     };
   }
 }
+
+export { TOWERS, ENEMIES, TILE, COLS, ROWS };

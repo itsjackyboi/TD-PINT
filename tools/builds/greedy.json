@@ -1,6 +1,8 @@
 {
  "name": "greedy",
- "target": "die around waves 12-18",
+ "profile": "fresh",
+ "hero": "jack",
+ "target": "dies mid-game",
  "plan": [
   {
    "build": "pike"
@@ -9,762 +11,516 @@
    "build": "pike"
   },
   {
-   "build": "bow"
-  },
-  {
-   "build": "tap"
-  },
-  {
-   "up": "tap",
-   "branch": 1
-  },
-  {
-   "up": "tap",
-   "branch": 1
-  },
-  {
-   "up": "tap",
-   "branch": 1
-  },
-  {
-   "build": "light"
-  },
-  {
    "build": "keg"
   },
   {
+   "hero": true
+  },
+  {
    "build": "tap"
   },
   {
-   "up": "tap",
-   "branch": 1
+   "up": "pike",
+   "path": 0
   },
   {
-   "up": "tap",
-   "branch": 1
+   "up": "pike",
+   "path": 0
   },
   {
-   "up": "tap",
-   "branch": 1
+   "build": "tap"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "build": "bow"
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "up": "bow",
+   "path": 0
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "pike",
+   "path": 1
+  },
+  {
+   "up": "pike",
+   "path": 1
   },
   {
    "build": "keg"
   },
   {
    "up": "keg",
-   "branch": 0
+   "path": 1
+  },
+  {
+   "up": "keg",
+   "path": 1
+  },
+  {
+   "build": "cellar"
+  },
+  {
+   "build": "light"
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "tap",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "up": "bow",
+   "path": 1
+  },
+  {
+   "build": "spinner"
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "up": "spinner",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
-   "up": "light",
-   "branch": 0
+   "up": "bow",
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "keg",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "up": "keg",
-   "branch": 0
+   "build": "spinner"
   },
   {
-   "build": "still"
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "tap",
-   "branch": 1
-  },
-  {
-   "up": "tap",
-   "branch": 1
-  },
-  {
-   "build": "bow"
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "build": "pike"
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "build": "still"
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
-  },
-  {
-   "build": "bow"
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
+   "up": "cellar",
+   "path": 0
   },
   {
    "build": "keg"
   },
   {
    "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "build": "pike"
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "build": "still"
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "build": "tap"
-  },
-  {
-   "up": "tap",
-   "branch": 0
-  },
-  {
-   "up": "tap",
-   "branch": 0
-  },
-  {
-   "build": "light"
-  },
-  {
-   "up": "light",
-   "branch": 1
-  },
-  {
-   "up": "light",
-   "branch": 1
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
    "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "pike",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "build": "still"
+   "build": "spinner"
   },
   {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
    "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "pike",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "build": "still"
+   "build": "spinner"
   },
   {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
    "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "pike",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "build": "still"
+   "build": "spinner"
   },
   {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
    "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "pike",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "build": "still"
+   "build": "spinner"
   },
   {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
+  },
+  {
+   "build": "keg"
+  },
+  {
+   "up": "keg",
+   "path": 0
+  },
+  {
+   "up": "keg",
+   "path": 0
   },
   {
    "build": "bow"
   },
   {
    "up": "bow",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
+   "path": 0
   },
   {
    "build": "pike"
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
    "up": "pike",
-   "branch": 0
+   "path": 1
   },
   {
-   "up": "pike",
-   "branch": 0
+   "item": "powderkeg"
   },
   {
-   "build": "still"
+   "build": "spinner"
   },
   {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
+   "up": "spinner",
+   "path": 1
   },
   {
    "build": "tap"
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
    "up": "tap",
-   "branch": 0
+   "path": 0
   },
   {
-   "build": "light"
+   "build": "cellar"
   },
   {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   },
   {
-   "up": "light",
-   "branch": 1
-  },
-  {
-   "build": "bow"
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "up": "bow",
-   "branch": 0
-  },
-  {
-   "build": "keg"
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "up": "keg",
-   "branch": 0
-  },
-  {
-   "build": "pike"
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "up": "pike",
-   "branch": 0
-  },
-  {
-   "build": "still"
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "up": "still",
-   "branch": 0
-  },
-  {
-   "build": "tap"
-  },
-  {
-   "up": "tap",
-   "branch": 0
-  },
-  {
-   "up": "tap",
-   "branch": 0
-  },
-  {
-   "build": "light"
-  },
-  {
-   "up": "light",
-   "branch": 1
-  },
-  {
-   "up": "light",
-   "branch": 1
+   "up": "cellar",
+   "path": 0
   }
  ],
  "reserve": 350,
+ "reserveFromWave": 3,
  "bonds": [
   2,
   3,
@@ -778,7 +534,5 @@
   "tankardGrant",
   "barleyRoad",
   "legalizeTonic"
- ],
- "kings": true,
- "reserveFromWave": 3
+ ]
 }
