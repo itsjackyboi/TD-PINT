@@ -7,7 +7,7 @@ import { HERO_XP } from '../data/heroes.js';
 
 export const TUTORIAL_WAVES = [
   [['zealot', 8, 1.3, 0, '*']],
-  [['zealot', 12, 0.9, 0, '*'], ['matron', 1, 0, 6, '*']],
+  [['zealot', 10, 1.1, 0, '*'], ['matron', 1, 0, 6, '*']],
   [['believer', 1, 0, 0, '*'], ['zealot', 12, 0.8, 3, '*']],
   [['infiltrator', 4, 1.6, 0, '*'], ['zealot', 10, 0.8, 4, '*']],
   [['zealot', 30, 0.35, 0, '*'], ['widow', 3, 2.5, 4, '*'], ['revivalist', 2, 2, 8, '*']],
@@ -25,7 +25,7 @@ const STEPS = [
   { text: 'Upgrades make towers much stronger. Tap your Pikeman and buy <b>Long Spears</b> from the first path: each spear then hits two enemies.', tile: [10, 4], done: (w) => w.towers.some((t) => t.type === 'pike' && t.tiers[0] + t.tiers[1] > 0) },
   { text: 'Build a <b>Taproom</b> on the marked tile. It does no damage, but its sticky ale slows enemies so your towers get more hits in.', el: '#tb-tap', tile: [9, 4], done: (w) => count(w, 'tap') > 0 },
   { text: 'Send wave 2. It brings a <b>Temperance Matron</b>: towers near her lose their buffs and ale towers fire at half speed.', el: '#b-send', done: (w) => waveDone(w, 2) },
-  { text: 'Time for your hero. Pick <b>Seamus</b> at the left end of the bar and place him in the middle of the loop. Heroes level up as they fight and gain abilities.', el: '#tb-hero', tile: [7, 8], done: (w) => !!w.hero },
+  { text: 'Time for your hero. Pick <b>Seamus</b> at the left end of the bar and place him in the middle of the loop. Heroes level up as they fight and gain abilities.', el: '#tb-hero', tile: [7, 8], enter: (w) => { w.gold = Math.max(w.gold, 260); }, done: (w) => !!w.hero },
   { text: 'Road items cost <b>ale</b>. Pick <b>Caltrops</b> from the bar and drop them on the road. The next 20 enemies to cross take damage.', el: '#ti-caltrops', enter: (w) => { w.ale = Math.max(w.ale, 30); }, done: (w) => w.stats.itemsUsed > 0 },
   { text: 'Wave 3 has a <b>True Believer</b>. It is <b>Armored</b>: sharp attacks like spears bounce off. Explosives work, so build a <b>Keg Catapult</b> on the marked tile.', el: '#tb-keg', tile: [8, 4], enter: (w) => { w.gold = Math.max(w.gold, 160); }, done: (w) => count(w, 'keg') > 0 },
   { text: 'Send wave 3 and watch the kegs crack the armour. Tap an enemy any time to see its traits and what beats it.', el: '#b-send', done: (w) => waveDone(w, 3) },

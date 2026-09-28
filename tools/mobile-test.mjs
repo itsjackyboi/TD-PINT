@@ -32,9 +32,12 @@ const errors = [];
 
 async function newPage(device, query = '') {
   const ctx = await browser.newContext({ ...devices[device] });
-  // pretend Jagerbauhm is unlocked so the targeted-ability flow can be tested
+  // a profile past the tutorial with Jagerbauhm unlocked (targeted ability), tips off
   await ctx.addInitScript(() => {
-    localStorage.setItem('aleforge.ledger.v1', JSON.stringify({ bestWave: 5, totalKills: 0, wins: 0, maxHeatWon: -1, runs: [], unlocked: ['king:jagerbauhm'] }));
+    if (localStorage.getItem('aleforge.profile.v2')) return;
+    localStorage.setItem('aleforge.profile.v2', JSON.stringify({ version: 2, name: 'Thumbs', tips: false, tutorialDone: true, towerXP: {},
+      totals: { waves: 30, kills: 100, runs: 3, wins: 0 }, best: { aleforge: { wave: 12, cleared: false } }, milestones: { plinket: false },
+      seen: { towers: [], enemies: [], traits: [] }, runs: [] }));
   });
   const page = await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`[${device}] ${m.text()}`); });
@@ -65,15 +68,17 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 // ------------------------------------------------------------ iPhone landscape
 const { page, cdp } = await newPage('iPhone 13 landscape');
 current = page;
-await step('iPhone landscape: title → setup → start via taps', async () => {
-  await page.tap('text=Begin the Siege');
-  await page.tap('[data-king=seamus]'); // swap Seamus for Jagerbauhm
-  await page.tap('[data-king=jagerbauhm]');
+await step('iPhone landscape: title → map → hero → start via taps', async () => {
+  await page.waitForSelector('#go-play');
+  await page.screenshot({ path: join(shots, 'mobile-00-title.png') });
+  await page.tap('#go-play');
+  await page.tap('[data-map=aleforge]');
+  await page.tap('[data-hero=jagerbauhm]');
   await page.tap('#go');
   await page.waitForFunction(() => window.app.world);
   expect(await ev(page, () => document.body.classList.contains('touch')), 'touch mode not detected');
-  const kings = await ev(page, () => window.app.world.kings);
-  expect(kings.includes('jagerbauhm'), `kings were ${kings}`);
+  const hero = await ev(page, () => window.app.world.heroId);
+  expect(hero === 'jagerbauhm', `hero was ${hero}`);
   await page.screenshot({ path: join(shots, 'mobile-01-landscape.png') });
 });
 await step('tap-tap to build (preview then confirm)', async () => {
@@ -92,14 +97,15 @@ await step('build via the ✓ button', async () => {
   expect(await ev(page, () => window.app.world.towerAt(20, 8)?.type) === 'pike', 'pike not built');
 });
 await step('tap tower → drawer → upgrade and sell', async () => {
+  await ev(page, () => { window.app.world.gold += 300; });
   await tapTile(page, 25, 6);
   await page.waitForFunction(() => document.body.classList.contains('drawer-open'));
   await sleep(300); // drawer slide-in
-  await page.tap('#p-info [data-act=up][data-branch="0"]');
-  expect(await ev(page, () => window.app.world.towerAt(25, 6).tier) === 1, 'upgrade failed');
+  await page.tap('#p-info [data-act=up][data-path="0"]');
+  expect(await ev(page, () => window.app.world.towerAt(25, 6).tiers[0]) === 1, 'upgrade failed');
   await page.screenshot({ path: join(shots, 'mobile-03-drawer.png') });
-  await page.tap('#side-tabs [data-tab=letter]');
-  expect(await page.isVisible('#p-letter'), 'letter tab not shown');
+  await page.tap('#side-tabs [data-tab=econ]');
+  expect(await page.isVisible('#p-econ'), 'economy tab not shown');
   await page.tap('#side-tabs [data-tab=info]');
   await page.tap('#b-drawer-close');
   expect(!(await ev(page, () => document.body.classList.contains('drawer-open'))), 'drawer ✕ did not close');
@@ -169,18 +175,32 @@ await step('send wave, long-press an enemy to inspect', async () => {
   await sleep(300);
   await page.tap('#b-pause');
 });
-await step("Jagerbauhm's barricade: preview then confirm on the road", async () => {
-  await ev(page, () => { window.app.world.ale += 60; });
+await step('place the hero from the Hero tab, level up, barricade on the road', async () => {
+  await ev(page, () => { window.app.world.gold += 400; });
   await page.tap('#b-drawer');
-  await page.tap('#side-tabs [data-tab=kings]');
-  await sleep(200);
-  await page.tap('[data-act=king][data-id=jagerbauhm]');
-  await sleep(300);
-  expect(await ev(page, () => window.app.ui.kingTargeting) === 'jagerbauhm', 'targeting not armed');
+  await page.tap('#side-tabs [data-tab=hero]');
+  await sleep(250);
+  await page.tap('#p-hero [data-act=hero]');
+  await tapTile(page, 19, 5);
+  await page.tap('#b-confirm');
+  expect(await ev(page, () => !!window.app.world.hero), 'hero not placed');
+  await ev(page, () => window.app.world.heroXp(600));
+  await page.waitForSelector('#abilities [data-id=barricade]');
+  await page.tap('#abilities [data-id=barricade]');
+  expect(await ev(page, () => window.app.ui.targeting?.id) === 'barricade', 'targeting not armed');
   await tapTile(page, 18, 9); // on the road
   expect(await ev(page, () => window.app.world.barricades.length) === 0, 'should only preview');
   await page.tap('#b-confirm');
   expect(await ev(page, () => window.app.world.barricades.length) === 1, 'barricade not placed');
+});
+await step('road item: tap the bar, preview on the road, confirm', async () => {
+  await ev(page, () => { window.app.world.ale += 40; });
+  await page.tap('#ti-stickyale');
+  await tapTile(page, 20, 9);
+  expect(await ev(page, () => window.app.world.items.length) === 0, 'item should only preview');
+  await tapTile(page, 20, 9);
+  expect(await ev(page, () => window.app.world.items.length) === 1, 'item not placed');
+  await page.screenshot({ path: join(shots, 'mobile-05b-item.png') });
 });
 await step('doctrine modal answered by tap', async () => {
   await ev(page, () => window.app.world.offerDoctrines());
@@ -202,7 +222,8 @@ await step('Pixel portrait: rotate hint, start, inline panels', async () => {
   expect(await pg.isVisible('#rotate'), 'rotate hint missing in portrait');
   await pg.screenshot({ path: join(shots, 'mobile-07-portrait-title.png') });
   await pg.tap('#rotate-dismiss');
-  await pg.tap('text=Begin the Siege');
+  await pg.tap('#go-play');
+  await pg.tap('[data-map=aleforge]');
   await pg.tap('#go');
   await pg.waitForFunction(() => window.app.world);
   await pg.tap('#tb-keg');
@@ -215,8 +236,8 @@ await step('Pixel portrait: rotate hint, start, inline panels', async () => {
   // portrait: panels sit inline under the map (no drawer), upgrade reachable by tap
   const map = await pg.locator('#stage').boundingBox(), side = await pg.locator('#side').boundingBox();
   expect(side.y >= map.y + map.height - 1, 'panels should sit below the map in portrait');
-  await pg.tap('#p-info [data-act=up][data-branch="1"]');
-  expect(await ev(pg, () => window.app.world.towerAt(25, 8).branch) === 1, 'portrait upgrade failed');
+  await pg.tap('#p-info [data-act=up][data-path="1"]');
+  expect(await ev(pg, () => window.app.world.towerAt(25, 8).tiers[1]) === 1, 'portrait upgrade failed');
 });
 
 await browser.close();

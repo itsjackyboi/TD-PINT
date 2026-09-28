@@ -210,12 +210,13 @@ export class Hud {
     if (sel && $('t-dmg')) { $('t-dmg').textContent = n0(sel.dmg); $('t-kills').textContent = sel.kills; }
     if (ui.hoverEnemy?.alive && $('e-hp')) $('e-hp').textContent = `${Math.ceil(ui.hoverEnemy.hp)} / ${Math.ceil(ui.hoverEnemy.maxHp)}`;
     setHTML($('p-hero-body'), this.heroHtml(world, ui));
+    $('p-hero').classList.toggle('picked', !!ui.selected?.hero);
     setHTML($('p-econ-body'), this.econHtml(world));
   }
 
   infoHtml(world, ui) {
     const t = ui.selected && world.towers.includes(ui.selected) ? ui.selected : null;
-    if (t) return t.hero ? this.heroHtml(world, ui, true) : this.towerPanel(world, t);
+    if (t && !t.hero) return this.towerPanel(world, t);
     if (ui.targeting?.kind === 'item') return this.itemInfo(world, ui.targeting.id);
     const type = ui.placing || ui.hoverBuild;
     if (type && TOWERS[type]) return this.towerInfo(world, type);

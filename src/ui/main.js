@@ -246,7 +246,7 @@ class App {
     if (e && (!t || this.touch)) { this.inspect(e); return; }
     if (t) {
       ui.selected = t; ui.hoverEnemy = null; ui.inspectType = null;
-      if (this.touch) this.openDrawer('info');
+      if (this.touch) this.openDrawer(t.hero ? 'hero' : 'info');
       sfx.play('click', 0);
       this.hud.lastPanels = 0;
       return;
@@ -485,7 +485,7 @@ class App {
       }
       case 'hero': {
         if (!w.heroId) return;
-        if (w.hero) { ui.selected = w.hero; if (this.touch) this.openDrawer('info'); break; }
+        if (w.hero) { ui.selected = w.hero; if (this.touch) this.openDrawer('hero'); break; }
         const was = ui.placingHero;
         clearModes();
         ui.placingHero = !was; ui.selected = null;

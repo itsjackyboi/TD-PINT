@@ -98,7 +98,7 @@ table.runs td, table.runs th { border-bottom: 1px solid var(--line); padding: 4p
 .help p { margin: 0 0 8px; break-inside: avoid; }
 kbd { background: #000; border: 1px solid var(--line); padding: 0 4px; border-radius: 2px; font-size: 11px; }
 
-#debug { position: fixed; left: 8px; bottom: 60px; width: 300px; max-height: 70vh; overflow-y: auto; background: rgba(0,0,0,0.88); border: 1px solid #555; padding: 8px; font: 11px monospace; z-index: 5; }
+#debug { position: fixed; left: 8px; top: 64px; width: 300px; max-height: 60vh; overflow-y: auto; background: rgba(0,0,0,0.88); border: 1px solid #555; padding: 8px; font: 11px monospace; z-index: 5; }
 #debug button { font: 11px monospace; padding: 2px 5px; margin: 1px; }
 #debug table { width: 100%; border-collapse: collapse; }
 #debug td { padding: 1px 3px; }
@@ -348,9 +348,9 @@ body.touch button { min-height: 40px; font-size: 22px; }
 #tutor .tbtns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 #tutor .tbtns button { font-size: 19px; }
 #tutor-ring { position: fixed; z-index: 4; pointer-events: none; border: 3px solid #ffd35a; box-shadow: 0 0 0 3px rgba(90,26,20,0.8), 0 0 18px #ffd35a; animation: ringpulse 1s ease-in-out infinite; }
-@keyframes ringpulse { 50% { transform: scale(1.15); opacity: 0.7; } }
+@keyframes ringpulse { 50% { opacity: 0.55; box-shadow: 0 0 0 6px rgba(90,26,20,0.6), 0 0 26px #ffd35a; } }
 .tut-glow { animation: tglow 0.9s ease-in-out infinite; position: relative; z-index: 5; }
-@keyframes tglow { 50% { filter: brightness(1.25) drop-shadow(0 0 8px #ffd35a); transform: translateY(-2px); } }
+@keyframes tglow { 50% { filter: brightness(1.25) drop-shadow(0 0 8px #ffd35a); } }
 
 /* ------------------------------------------------------------------ modal variants */
 #modal.full { padding: 0; background: #120d0a; }
@@ -442,3 +442,9 @@ body.touch #abilities .ab { min-height: 44px; }
 #b-menu .long { margin-left: 4px; }
 body.touch #b-menu .long { display: none; }
 @media (max-height: 500px) { #topbar .res.small { display: none; } #b-menu .long { display: none; } }
+#side section.picked { outline: 3px solid #ffd35a; outline-offset: -3px; }
+@media (max-height: 500px) {
+  body.touch .tb .tlabel { min-width: 0; overflow: hidden; }
+  body.touch .tb .tname { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56px; }
+  #topbar .res { margin-right: 6px; }
+}
