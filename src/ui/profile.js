@@ -18,6 +18,7 @@ function normalize(p) {
   out.runs = p.runs || [];
   out.pending = p.pending || []; // leaderboard submissions waiting for a connection
   out.lbUrl = p.lbUrl || '';
+  out.fresh = (p.fresh || []).filter((t) => TOWER_ORDER.includes(t)); // newly unlocked towers not yet tried
   return out;
 }
 

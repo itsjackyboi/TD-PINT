@@ -36,6 +36,7 @@ export class Hud {
     this.touch = app.touch;
     this.lastPanels = 0;
     this.toasts = [];
+    this.fresh = new Set();
     this.setTab('info');
   }
 
@@ -52,6 +53,7 @@ export class Hud {
   start(world) {
     this.world = world;
     this.buildMorale(world);
+    this.fresh = new Set((this.app.profile.fresh || []).filter((t) => world.towerAvailable(t)));
     this.buildBar(world);
     $('toasts').innerHTML = '';
     this.toasts = [];
@@ -72,8 +74,9 @@ export class Hud {
     let html = towers.map((type) => {
       const def = TOWERS[type];
       const soon = !world.towerAvailable(type);
-      return `<button class="tb ${soon ? 'soon' : ''}" data-act="build" data-type="${type}" id="tb-${type}" ${soon ? `disabled title="Unlocks at wave ${def.unlock.wave}"` : `title="${esc(def.desc)}"`}>
-        ${icon(type)}<span class="tlabel">${this.key(`<span class="key">${def.key}</span>`)}<span class="tname">${esc(def.short)}</span>
+      const fresh = !soon && this.fresh.has(type);
+      return `<button class="tb ${soon ? 'soon' : ''} ${fresh ? 'fresh' : ''}" data-act="build" data-type="${type}" id="tb-${type}" ${soon ? `disabled title="Unlocks at wave ${def.unlock.wave}"` : `title="${esc(def.desc)}"`}>
+        ${fresh ? '<span class="newtag">NEW!</span>' : ''}${icon(type)}<span class="tlabel">${this.key(`<span class="key">${def.key}</span>`)}<span class="tname">${esc(def.short)}</span>
         <span class="tcost">${soon ? `wave ${def.unlock.wave}` : `${world.cost(def.cost)}g`}</span></span></button>`;
     }).join('');
     if (world.heroId && !world.hero) {

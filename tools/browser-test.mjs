@@ -80,6 +80,19 @@ await step('title screen with name field, mode toggle and notes', async () => {
   await shot('02-notes');
   await page.click('#back');
 });
+await step('music: title theme wanted; every song renders audible audio', async () => {
+  expect(await ev(() => window.app.music.current) === 'title', 'title music not requested');
+  const rms = await ev(async () => {
+    const { renderSong, SONGS } = await import('/src/ui/music.js');
+    const out = {};
+    for (const k of Object.keys(SONGS)) out[k] = await renderSong(k, 3);
+    return out;
+  });
+  for (const [k, v] of Object.entries(rms)) expect(v > 0.005, `song ${k} is silent (rms ${v})`);
+  await page.click('#go-music');
+  expect(await ev(() => window.app.music.muted && localStorage.getItem('aleforge.music') === '0'), 'music toggle not saved');
+  await page.click('#go-music');
+});
 await step('pixel art loaded; every atlas sprite is non-empty', async () => {
   const empty = await ev(async () => {
     const { sprites, ATLAS } = await import('/src/ui/sprites.js');
@@ -173,6 +186,22 @@ await step('enemy tip pauses the wave; trait panel explains counters', async () 
   await shot('06-enemy');
 });
 
+await step('new tower unlocked: callout, NEW! ribbon until picked; battle music', async () => {
+  expect(await ev(() => window.app.music.current) === 'battle', 'battle music not requested');
+  await ev(() => { window.app.profile.tips = false; const w = window.app.world; for (const a of w.activeWaves) a.qi = a.queue.length; w.wave = 3; });
+  await page.waitForFunction(() => window.app.world.canSendWave());
+  await ev(() => window.app.world.sendWave());
+  await page.waitForSelector('#unlock.show');
+  const txt = await page.textContent('#unlock');
+  expect(/new tower unlocked/i.test(txt) && txt.includes('Bottle Spinner'), `callout text: ${txt}`);
+  await page.waitForSelector('#tb-spinner.fresh .newtag');
+  await page.waitForTimeout(700);
+  await shot('06b-unlock');
+  await page.keyboard.press('5');
+  expect(!(await page.$('#tb-spinner.fresh')), 'NEW! ribbon not cleared after picking the tower');
+  await page.keyboard.press('Escape');
+});
+
 // ------------------------------------------------------------ veteran profile
 await step('XP-gated tiers: locked on a fresh tower XP, open with enough XP', async () => {
   await ev((p) => { localStorage.setItem('aleforge.profile.v2', JSON.stringify(p)); }, VETERAN);
@@ -230,6 +259,7 @@ await step('hero placed, levels up, ability ready', async () => {
 await step('boss wave: Plinket phases', async () => {
   await ev(() => { const w = window.app.world; w.invincible = true; w.wave = 29; window.app.ui.speed = 8; w.sendWave(); });
   await page.waitForFunction(() => window.app.world.boss && window.app.world.boss.phase >= 2, null, { timeout: 120000 });
+  expect(await ev(() => window.app.music.current) === 'boss', 'boss music not playing');
   await shot('08-boss');
 });
 await step('victory → Continue into Freeplay → wave 31+', async () => {

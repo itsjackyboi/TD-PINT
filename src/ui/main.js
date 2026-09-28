@@ -16,6 +16,8 @@ import { Tutorial, TUTORIAL_WAVES } from './tutorial.js';
 import { Gestures } from './touch.js';
 import { sprites } from './sprites.js';
 import { sfx, SfxWatcher } from './audio.js';
+import { music } from './music.js';
+import { towerIconURL } from './pixelart.js';
 
 const STEP = 1 / 60;
 const MAX_STEPS = 24;
@@ -44,6 +46,7 @@ class App {
     this.simMs = 0;
     this.debug = null;
     this.sfxWatch = new SfxWatcher();
+    this.music = music;
     this.bindInput();
     sprites.load().then(() => {
       document.body.classList.toggle('pixel', sprites.ready);
@@ -100,6 +103,7 @@ class App {
     this.renderer.bg = null;
     this.hud.start(world);
     this.debug?.attach(world);
+    music.play('battle');
     this.closeDrawer();
     screens.hide();
     // tips for the towers the player starts with come when they first pick one
@@ -119,6 +123,8 @@ class App {
     const s = w.summary();
     const tainted = this.debug?.tainted;
     const result = tainted ? { xp: {}, unlocked: [] } : awardRun(this.profile, s);
+    // towers unlocked for good get a NEW! ribbon in the build bar next game
+    for (const k of result.unlocked) if (k.startsWith('tower:') && !this.profile.fresh.includes(k.slice(6))) this.profile.fresh.push(k.slice(6));
     saveProfile(this.profile);
     if (tainted) { screens.endScreen(this, w, result, null); return; }
     screens.endScreen(this, w, result, null);
@@ -157,6 +163,8 @@ class App {
       this.tutorial?.tick(w);
       this.sfxWatch.tick(w);
       $('paused').classList.toggle('hidden', !this.ui.paused || screens.isOpen());
+      music.setDuck(this.ui.paused || (screens.isOpen() && !w.over));
+      if (music.current === 'boss' && !w.over && !w.enemies.some((e) => e.alive && e.boss)) music.play('battle');
     } else {
       this.renderer.draw(this.backdrop, this.ui);
     }
@@ -169,11 +177,11 @@ class App {
       switch (ev.type) {
         case 'waveStart': this.banner(ev.text); sfx.play('wave', 0); break;
         case 'waveEnd': sfx.play('coin', 0); break;
-        case 'boss': this.banner(ev.text); sfx.play('boss', 0); break;
+        case 'boss': this.banner(ev.text); sfx.play('boss', 0); music.play('boss'); break;
         case 'unlock':
           this.hud.buildBar(w);
-          this.hud.toast(ev.text, 'good');
-          if (ev.tower) this.tips.tower(ev.tower, 'unlock');
+          if (ev.tower) this.unlockCallout(ev.tower);
+          else this.hud.toast(ev.text, 'good');
           break;
         case 'newEnemy': this.tips.enemy(ev.enemy, ev.traits || []); break;
         case 'heroLevel': this.hud.toast(ev.text, 'good'); sfx.play('upgrade', 0); break;
@@ -184,12 +192,14 @@ class App {
           break;
         case 'victory':
           sfx.play('victory', 0);
+          music.stop(); music.sting('victory');
           if (this.tutorial) { this.endTutorial(true); break; }
           this.banner('ALEFORGE STANDS');
           setTimeout(() => { if (this.world === w && !w.freeplay) screens.victoryScreen(this, w); }, 1500);
           break;
         case 'defeat':
           sfx.play('defeat', 0);
+          music.stop(); music.sting('defeat');
           if (this.tutorial) { this.hud.toast('The keep fell. Try the tutorial again from the title screen.', 'warn'); setTimeout(() => this.endTutorial(false), 2500); break; }
           this.banner(w.freeplay ? `FREEPLAY ENDS ON WAVE ${w.wave}` : 'THE KEEP HAS FALLEN');
           setTimeout(() => { if (this.world === w) this.finishRun(); }, 1800);
@@ -197,6 +207,36 @@ class App {
       }
     }
     w.events.length = 0;
+  }
+
+  // A tower became available mid-game: big callout, jingle, and a glowing
+  // NEW! ribbon on its build-bar button until the player picks it.
+  unlockCallout(type) {
+    const w = this.world, def = TOWERS[type];
+    const el = $('unlock');
+    el.innerHTML = `<div class="uk">New tower unlocked!</div>${sprites.ready ? `<img alt="" src="${towerIconURL(type, 4)}">` : ''}
+      <div class="un">${def.name}</div><div class="ud">${def.desc}</div><div class="uh">${this.touch ? 'Tap' : 'Click'} it in the build bar${this.touch ? '' : ` or press ${def.key.toUpperCase()}`}.</div>`;
+    this.hud.fresh.add(type);
+    this.hud.buildBar(w);
+    $(`tb-${type}`)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    // unlocks arrive with a wave start: let the "Wave N" banner clear first
+    clearTimeout(this.unlockT);
+    this.unlockT = setTimeout(() => {
+      if (this.world !== w) return;
+      el.classList.remove('show');
+      void el.offsetWidth; // restart the pop-in animation
+      el.classList.add('show');
+      music.sting('unlock');
+      this.unlockT = setTimeout(() => el.classList.remove('show'), 4200);
+    }, 1500);
+    setTimeout(() => { if (this.world === w) this.tips.tower(type, 'unlock'); }, 4000);
+  }
+
+  clearFresh(type) {
+    if (!this.hud.fresh.delete(type)) return;
+    this.profile.fresh = this.profile.fresh.filter((t) => t !== type);
+    saveProfile(this.profile);
+    $(`tb-${type}`)?.classList.remove('fresh');
   }
 
   banner(text) {
@@ -381,13 +421,18 @@ class App {
     window.addEventListener('pagehide', () => { if (this.world) this.ui.paused = true; });
     document.addEventListener('gesturestart', (e) => e.preventDefault());
 
-    const unlock = () => sfx.unlock();
+    const unlock = () => { sfx.unlock(); music.resume(); };
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     const mute = $('b-mute');
     const syncMute = () => { mute.textContent = sfx.muted ? '🔇' : '🔊'; mute.classList.toggle('on', sfx.muted); };
     mute.onclick = () => { sfx.setMuted(!sfx.muted); syncMute(); };
     syncMute();
+    const mus = $('b-music');
+    const syncMusic = () => { mus.classList.toggle('on', music.muted); mus.title = music.muted ? 'Music off (Shift+M)' : 'Music on (Shift+M)'; };
+    mus.onclick = () => { music.setMuted(!music.muted); syncMusic(); };
+    this.syncMusic = syncMusic;
+    syncMusic();
     $('b-speed').onclick = () => this.cycleSpeed();
     $('b-pause').onclick = () => { this.ui.paused = !this.ui.paused; };
     $('paused').onclick = () => { this.ui.paused = false; };
@@ -435,7 +480,7 @@ class App {
       case 'h': this.act('hero', {}); break;
       case 'b': this.act('bond', {}); break;
       case '?': screens.notesScreen(this); break;
-      case 'm': $('b-mute').click(); break;
+      case 'm': (ev.shiftKey ? $('b-music') : $('b-mute')).click(); break;
     }
   }
 
@@ -479,7 +524,7 @@ class App {
         ui.placing = was ? null : d.type;
         ui.selected = null; ui.inspectType = null;
         if (this.touch) { ui.hover = null; this.closeDrawer(); }
-        if (!was) this.tips.tower(d.type);
+        if (!was) { this.tips.tower(d.type); this.clearFresh(d.type); }
         sfx.play('click', 0);
         break;
       }

@@ -12,6 +12,7 @@ import { saveProfile, resetProfile } from './profile.js';
 import { lbUrl, fetchTop, localTop, flushQueue } from './leaderboard.js';
 import { sprites } from './sprites.js';
 import { sfx } from './audio.js';
+import { music } from './music.js';
 import { towerIconURL, heroPortraitURL, mapThumbURL } from './pixelart.js';
 import { esc } from './hud.js';
 
@@ -32,6 +33,7 @@ const on = (el, sel, fn) => { const x = el.querySelector(sel); if (x) x.onclick 
 // ------------------------------------------------------------------ title
 export function titleScreen(app) {
   const p = app.profile;
+  music.play('title');
   const best = bestWave(p);
   show(`<div class="title-screen">
       <canvas id="title-canvas"></canvas>
@@ -54,6 +56,7 @@ export function titleScreen(app) {
         <div class="title-foot">${best ? `Best wave ${best} · ${p.totals.wins} victories · ${p.totals.runs} games` : 'No games yet'}</div>
       </div>
       <button class="note-btn" id="go-notes" title="How the game works"><span>📜</span> Notes</button>
+      <button class="music-btn ${music.muted ? 'on' : ''}" id="go-music" title="Music on/off">🎵 Music ${music.muted ? 'off' : 'on'}</button>
     </div>`, (el) => {
     const input = el.querySelector('#pname');
     input.oninput = () => { p.name = input.value.replace(/[<>]/g, '').slice(0, 20); saveProfile(p); };
@@ -66,6 +69,13 @@ export function titleScreen(app) {
     on(el, '#go-prog', () => progressScreen(app));
     on(el, '#go-set', () => settingsScreen(app));
     on(el, '#go-notes', () => notesScreen(app, () => titleScreen(app)));
+    on(el, '#go-music', () => {
+      music.setMuted(!music.muted);
+      const b = el.querySelector('#go-music');
+      b.textContent = `🎵 Music ${music.muted ? 'off' : 'on'}`;
+      b.classList.toggle('on', music.muted);
+      app.syncMusic?.();
+    });
     const setMode = (tips) => { p.tips = tips; saveProfile(p); titleScreen(app); };
     on(el, '#m-beg', () => setMode(true));
     on(el, '#m-exp', () => setMode(false));
@@ -152,7 +162,9 @@ export function mapSelect(app) {
       <div class="tier t${m.tierN}">${m.tier}</div><div class="ctext">${esc(m.desc)}</div>
       <div class="muted small">${b ? `Best: wave ${b.wave}${b.cleared ? ' · cleared ✓' : ''}` : 'Not played yet'}</div></button>`;
   }).join('');
+  const fresh = (p.fresh || []).map((t) => TOWERS[t].short);
   show(`<h2>Choose a map</h2>
+    ${fresh.length ? `<div class="newnote">★ New tower${fresh.length > 1 ? 's' : ''} ready to try: <b>${fresh.map(esc).join(', ')}</b></div>` : ''}
     <div class="choices maps">${cards}<button class="choice mapc random" data-map="random"><div class="cname">Random</div><div class="ctext">Let the dice pick.</div><div class="dice">⚄</div></button></div>
     <div class="actions"><button id="back">Back</button></div>`, (el) => {
     el.querySelectorAll('[data-map]').forEach((c) => {
@@ -227,7 +239,8 @@ export function settingsScreen(app, back) {
       <div class="modes-toggle"><button id="s-beg" class="${p.tips ? 'on' : ''}">Beginner (tips)</button><button id="s-exp" class="${p.tips ? '' : 'on'}">Experienced</button></div>
       <div class="muted small">Beginner pauses the game to explain each new tower and enemy the first time. The siege is equally hard in both.</div>
       <button id="s-retips">Show all tips again</button></div>
-    <div class="setting"><b>Sound</b> <button id="s-sound">${sfx.muted ? 'Off' : 'On'}</button></div>
+    <div class="setting"><b>Sound effects</b> <button id="s-sound">${sfx.muted ? 'Off' : 'On'}</button></div>
+    <div class="setting"><b>Music</b> <button id="s-music">${music.muted ? 'Off' : 'On'}</button></div>
     <div class="setting"><b>Leaderboard URL</b>
       <input id="s-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(p.lbUrl || '')}">
       <div class="muted small">${url ? 'Scores are sent to the leaderboard at the end of each game.' : 'Paste the Apps Script web-app URL here (see tools/leaderboard/SETUP.md). Until then, scores stay on this device.'}</div></div>
@@ -238,6 +251,7 @@ export function settingsScreen(app, back) {
     on(el, '#s-exp', () => setMode(false));
     on(el, '#s-retips', () => { p.seen = { towers: [], enemies: [], traits: [] }; saveProfile(p); el.querySelector('#s-retips').textContent = 'Tips reset ✓'; });
     on(el, '#s-sound', () => { sfx.setMuted(!sfx.muted); el.querySelector('#s-sound').textContent = sfx.muted ? 'Off' : 'On'; });
+    on(el, '#s-music', () => { music.setMuted(!music.muted); el.querySelector('#s-music').textContent = music.muted ? 'Off' : 'On'; app.syncMusic?.(); });
     el.querySelector('#s-url').onchange = (ev) => { p.lbUrl = ev.target.value.trim(); saveProfile(p); };
     on(el, '#s-reset', () => {
       if (confirm('Erase all tower XP, unlocks, bests and run history?')) { app.profile = resetProfile(p); settingsScreen(app, back); }
@@ -351,6 +365,30 @@ export function pauseMenu(app) {
   });
 }
 
+// big cards for everything a game unlocked (towers first)
+function unlockCards(keys) {
+  if (!keys.length) return '';
+  const order = (k) => (k.startsWith('tower:') ? 0 : k.startsWith('hero:') ? 1 : 2);
+  const cards = [...keys].sort((a, b) => order(a) - order(b)).map((k) => {
+    const [kind, a, b] = k.split(':');
+    if (kind === 'tower') {
+      const img = sprites.ready ? `<img alt="" src="${towerIconURL(a, 3)}">` : '';
+      return `<div class="ucard tower">${img}<div><div class="uk">New tower unlocked!</div><b>${esc(TOWERS[a].name)}</b><div class="small">${esc(TOWERS[a].desc)}</div></div></div>`;
+    }
+    if (kind === 'hero') {
+      const img = sprites.ready ? `<img alt="" src="${heroPortraitURL(a)}">` : '';
+      return `<div class="ucard">${img}<div><div class="uk">New hero</div><b>${esc(HEROES[a].name)}</b></div></div>`;
+    }
+    if (kind === 'tier') {
+      const img = sprites.ready ? `<img alt="" src="${towerIconURL(a, 2)}">` : '';
+      return `<div class="ucard">${img}<div><div class="uk">Upgrades unlocked</div><b>${esc(TOWERS[a].name)}: tier ${b}</b></div></div>`;
+    }
+    return `<div class="ucard"><div><div class="uk">Unlocked</div><b>${esc(describeUnlock(k))}</b></div></div>`;
+  }).join('');
+  const towers = keys.filter((k) => k.startsWith('tower:')).length;
+  return `<h3>${towers ? `New tower${towers > 1 ? 's' : ''} unlocked!` : 'Unlocked!'}</h3><div class="ucards">${cards}</div>`;
+}
+
 // result: { xp: {type: gained}, unlocked: [keys] }, lb: 'sent' | 'queued' | 'local' | null
 export function endScreen(app, world, result, lb) {
   const s = world.summary();
@@ -368,7 +406,7 @@ export function endScreen(app, world, result, lb) {
       <span class="muted">Doctrines</span><span>${s.doctrines.map((d) => esc(DOCTRINES[d].name)).join(', ') || '—'}</span><span class="muted">Time</span><span>${Math.floor(s.time / 60)}m ${s.time % 60}s</span>
     </div>
     ${xpRows ? `<h3>Tower XP earned</h3><div class="stats wide">${xpRows}</div>` : ''}
-    ${result.unlocked.length ? `<h3>Unlocked!</h3><ul class="unlocks">${result.unlocked.map((k) => `<li>${esc(describeUnlock(k))}</li>`).join('')}</ul>` : ''}
+    ${unlockCards(result.unlocked)}
     <p class="muted small">${esc(lbText)}</p>
     <div class="actions"><button class="primary" id="again">Play again</button><button id="maps">Choose map</button><button id="lb">Leaderboard</button><button id="title">Title</button></div>`, (el) => {
     on(el, '#again', () => { hide(); app.startRun(app.lastRun); });

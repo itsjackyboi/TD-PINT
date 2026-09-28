@@ -124,6 +124,24 @@ Scores go to a Google Sheet through a small Apps Script web app, ranked by highe
 
 Once it's deployed, paste the URL into `src/config.js` (for everyone) or **Settings** (for one browser). Until then, scores stay on each device. Scores that can't be sent are queued and retried.
 
+## Music
+
+The music is original chiptune, synthesized live with WebAudio in `src/ui/music.js`: two pulse channels, a triangle bass and noise drums, NES-style, with no audio files.
+
+| Where | Tune |
+|---|---|
+| Title screen | a G-major tavern jig |
+| In game | an A-minor march |
+| Boss waves | a faster, drum-heavy version of the march |
+| Events | short jingles for a new tower unlock, victory and defeat |
+
+To toggle it, use 🎵 in the top bar or on the title screen, or press `Shift+M`. Sound effects have their own toggle (🔊 / `M`).
+
+When a tower unlocks mid-game:
+- A **"New tower unlocked!"** card pops up with the tower's picture and what it does, and a jingle plays.
+- Its build-bar button gets a glowing **NEW!** ribbon until you pick it.
+- Towers unlocked for good at the end of a game appear as cards on the end screen, carry the ribbon into the next game, and get a note on map select.
+
 ## Art and sound
 
 Everything comes from Kenney's free **CC0** packs: the Tiny Town, Tiny Dungeon and Tiny Battle sprites, the UI Pack Pixel Adventure frames, Kenney Fonts, and several sound packs. [CREDITS.md](CREDITS.md) lists them all.
