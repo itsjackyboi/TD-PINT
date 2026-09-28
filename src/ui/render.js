@@ -1,11 +1,11 @@
 // Canvas renderer. Reads world state; never mutates it.
-import { TILE, COLS, ROWS, W, H, DISTRICTS, CASTLE } from '../core/map.js';
+import { TILE, COLS, ROWS, W, H } from '../core/map.js';
 import { TOWERS } from '../data/towers.js';
+import { ENEMIES } from '../data/enemies.js';
+import { ITEMS } from '../data/items.js';
+import { HEROES } from '../data/heroes.js';
 import { sprites } from './sprites.js';
 import * as px from './pixelart.js';
-
-const LAND = ['#3b3322', '#372f1f', '#3e3424', '#35302a'];
-const PATH = '#6d5b40', PATH_EDGE = '#4d3f2b', BRIDGE = '#7b5a33', WATER = '#132230';
 
 const MAX_ZOOM = 3;
 
@@ -15,12 +15,11 @@ export class Renderer {
     this.g = canvas.getContext('2d');
     this.bg = null;
     this.bgKey = '';
-    // camera: zoom factor over "fit to box", centred on world point (x, y)
     this.cam = { z: 1, x: W / 2, y: H / 2 };
     this.cssW = 0; this.cssH = 0; this.dpr = 1; this.fit = 1;
+    this.drawList = [];
   }
 
-  // Match the backing store to the canvas' CSS box (sharp on HiDPI and when zoomed).
   layout() {
     const cw = this.c.clientWidth || W, ch = this.c.clientHeight || H;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -42,14 +41,19 @@ export class Renderer {
     this.cam.y = hh >= H / 2 ? H / 2 : Math.max(hh, Math.min(H - hh, this.cam.y));
   }
 
-  // client (viewport) coordinates -> world coordinates
   toWorld(clientX, clientY) {
     const r = this.c.getBoundingClientRect();
     const s = this.scale();
     return { x: (clientX - r.left - this.cssW / 2) / s + this.cam.x, y: (clientY - r.top - this.cssH / 2) / s + this.cam.y };
   }
 
-  // zoom by factor keeping the world point under (clientX, clientY) fixed
+  // world -> client coordinates (for DOM overlays such as tutorial pointers)
+  toClient(x, y) {
+    const r = this.c.getBoundingClientRect();
+    const s = this.scale();
+    return { x: (x - this.cam.x) * s + this.cssW / 2 + r.left, y: (y - this.cam.y) * s + this.cssH / 2 + r.top };
+  }
+
   zoomAt(factor, clientX, clientY) {
     const before = this.toWorld(clientX, clientY);
     this.cam.z = Math.max(1, Math.min(MAX_ZOOM, this.cam.z * factor));
@@ -68,85 +72,23 @@ export class Renderer {
 
   resetView() { this.cam.z = 1; this.cam.x = W / 2; this.cam.y = H / 2; this.clamp(); }
 
+  key(world) { return `${world.mapId}|${world.activePaths.join('')}|${sprites.ready ? 'px' : 'geo'}`; }
+
   buildBackground(world) {
-    this.bgKey = world.activePaths.join('') + (sprites.ready ? '|px' : '');
-    if (sprites.ready) { this.bg = px.buildPixelBackground(world); this.pixel = true; return; }
-    this.pixel = false;
+    this.bgKey = this.key(world);
+    this.pixel = sprites.ready;
+    if (sprites.ready) { this.bg = px.buildPixelBackground(world); return; }
+    // plain fallback while (or if) the sprite sheets can't load
     const off = document.createElement('canvas');
-    off.width = W * 2; off.height = H * 2;
+    off.width = W; off.height = H;
     const g = off.getContext('2d');
-    g.scale(2, 2);
     const map = world.map;
-    g.fillStyle = WATER;
-    g.fillRect(0, 0, W, H);
-    // water ripples
-    g.strokeStyle = 'rgba(120,170,200,0.06)';
-    g.lineWidth = 1;
-    for (let y = 8; y < H; y += 14) {
-      g.beginPath();
-      for (let x = 0; x <= W; x += 20) g.lineTo(x, y + Math.sin(x * 0.05 + y) * 2);
-      g.stroke();
-    }
     for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
-      const d = map.land[ty * COLS + tx];
-      if (d < 0) continue;
-      g.fillStyle = LAND[d];
+      const i = ty * COLS + tx;
+      g.fillStyle = map.terrain[i] === 0 ? '#1d3a4a' : map.blocked[i] ? '#4a4038' : '#3e4a2a';
+      if (map.anyPath[i] && world.activePaths.some((id) => map.pathTile[id][i])) g.fillStyle = '#7a6040';
+      if (map.isCastle(tx, ty)) g.fillStyle = '#6a6a6a';
       g.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-      // subtle build grid
-      g.strokeStyle = 'rgba(0,0,0,0.18)';
-      g.strokeRect(tx * TILE + 0.5, ty * TILE + 0.5, TILE - 1, TILE - 1);
-    }
-    // shorelines
-    g.strokeStyle = 'rgba(200,180,130,0.25)';
-    g.lineWidth = 2;
-    for (const d of DISTRICTS) {
-      const [x0, y0, x1, y1] = d.rect;
-      g.strokeRect(x0 * TILE + 1, y0 * TILE + 1, (x1 - x0) * TILE - 2, (y1 - y0) * TILE - 2);
-    }
-    // paths
-    for (const id of world.activePaths) {
-      const pt = map.pathTile[id];
-      for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
-        if (!pt[ty * COLS + tx]) continue;
-        const water = map.land[ty * COLS + tx] < 0;
-        g.fillStyle = water ? BRIDGE : PATH;
-        g.fillRect(tx * TILE, ty * TILE, TILE, TILE);
-        g.fillStyle = water ? 'rgba(0,0,0,0.25)' : PATH_EDGE;
-        if (water) for (let k = 4; k < TILE; k += 8) g.fillRect(tx * TILE, ty * TILE + k, TILE, 1.5);
-        else { g.fillRect(tx * TILE + 6, ty * TILE + 10, 6, 4); g.fillRect(tx * TILE + 24, ty * TILE + 26, 7, 4); }
-      }
-    }
-    // reserved (inactive) Owe Block causeway, faint
-    if (!world.activePaths.includes('C')) {
-      g.fillStyle = 'rgba(109,91,64,0.25)';
-      const pt = map.pathTile.C;
-      for (let i = 0; i < pt.length; i++) if (pt[i] && !map.pathTile.A[i]) g.fillRect((i % COLS) * TILE, Math.floor(i / COLS) * TILE, TILE, TILE);
-    }
-    // castle keep
-    const cx = CASTLE.x * TILE, cy = CASTLE.y * TILE;
-    g.fillStyle = '#5b5a58';
-    g.fillRect(cx - 6, cy - 10, CASTLE.w * TILE + 6, CASTLE.h * TILE + 20);
-    g.fillStyle = '#747370';
-    for (let k = 0; k < 5; k++) g.fillRect(cx - 6 + k * 18, cy - 18, 10, 10);
-    g.fillStyle = '#2a2622';
-    g.fillRect(cx - 6, cy + 30, 18, 22);
-    g.fillStyle = '#d4a93c';
-    g.beginPath(); g.moveTo(cx + 40, cy - 40); g.lineTo(cx + 40, cy - 14); g.stroke();
-    g.fillRect(cx + 40, cy - 40, 18, 11);
-    // district labels
-    g.font = '600 12px Georgia, serif';
-    g.fillStyle = 'rgba(230,210,160,0.35)';
-    for (const d of DISTRICTS) {
-      const [x0, y0] = d.rect;
-      g.fillText(d.name.toUpperCase(), x0 * TILE + 8, y0 * TILE + 16);
-    }
-    // spawn markers
-    g.font = '700 11px Georgia, serif';
-    for (const id of world.activePaths) {
-      const p = map.paths[id].pts[0], q = map.paths[id].pts[1];
-      const x = Math.max(14, Math.min(W - 40, (p.x + q.x) / 2)), y = Math.max(14, Math.min(H - 8, (p.y + q.y) / 2));
-      g.fillStyle = 'rgba(255,95,176,0.8)';
-      g.fillText('MAMA', x - 14, y);
     }
     this.bg = off;
   }
@@ -154,7 +96,7 @@ export class Renderer {
   draw(world, ui) {
     const g = this.g;
     this.layout();
-    if (!this.bg || this.bgKey !== world.activePaths.join('') + (sprites.ready ? '|px' : '')) this.buildBackground(world);
+    if (!this.bg || this.bgKey !== this.key(world)) this.buildBackground(world);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = '#0b0907';
     g.fillRect(0, 0, this.c.width, this.c.height);
@@ -163,171 +105,79 @@ export class Renderer {
     g.imageSmoothingEnabled = !this.pixel;
     g.drawImage(this.bg, 0, 0, W, H);
     const t = performance.now() / 1000;
-    if (this.pixel) { this.drawPixel(world, ui, t); return; }
 
-    // morale tint on districts in danger
-    DISTRICTS.forEach((d, i) => {
-      if (world.morale[i] < world.mods.moraleThreshold + 10) {
-        const [x0, y0, x1, y1] = d.rect;
-        g.fillStyle = `rgba(194,59,138,${0.06 + 0.04 * Math.sin(t * 3)})`;
-        g.fillRect(x0 * TILE, y0 * TILE, (x1 - x0) * TILE, (y1 - y0) * TILE);
-      }
-    });
-
-    for (const b of world.barricades) {
-      g.fillStyle = '#e8e0c8';
-      g.fillRect(b.x - 16, b.y - 5, 32, 10);
-      g.strokeStyle = '#d4a93c';
-      g.strokeRect(b.x - 16, b.y - 5, 32, 10);
-    }
-
-    // range rings under towers
-    const sel = ui.selected;
-    if (sel && world.towers.includes(sel)) this.rangeRing(sel.x, sel.y, sel.s, sel.def.color);
-    if (ui.placing && ui.hover) {
-      const { tx, ty } = ui.hover;
-      const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
-      const why = world.canPlace(ui.placing, tx, ty);
-      const def = TOWERS[ui.placing];
-      this.rangeRing(x, y, def.base, why ? '#ff5050' : '#7dff9a');
-      g.globalAlpha = 0.6;
-      this.towerBody(x, y, def, 0, null, why ? '#ff5050' : def.color);
-      g.globalAlpha = 1;
-    }
-
-    for (const tw of world.towers) this.tower(tw, world, t);
-    for (const e of world.enemies) if (e.alive) this.enemy(e, world, t);
-    const insp = ui.hoverEnemy;
-    if (insp && insp.alive) {
-      g.strokeStyle = '#ffe08a'; g.lineWidth = 2;
-      g.beginPath(); g.arc(insp.x, insp.y, insp.def.size + 7, 0, 7); g.stroke(); g.lineWidth = 1;
-    }
-
-    for (const p of world.projectiles) {
-      g.fillStyle = p.color;
-      if (p.kind === 'shell') {
-        g.beginPath(); g.arc(p.x, p.y, 5, 0, 7); g.fill();
-        g.strokeStyle = '#2a1a0a'; g.stroke();
-      } else if (p.kind === 'lance') {
-        g.strokeStyle = p.color; g.lineWidth = 3;
-        const len = Math.hypot(p.vx, p.vy) || 1;
-        g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(p.x - (p.vx / len) * 14, p.y - (p.vy / len) * 14); g.stroke();
-        g.lineWidth = 1;
-      } else {
-        g.fillRect(p.x - 2, p.y - 2, 4, 4);
-      }
-    }
-
-    for (const f of world.effects) {
-      const k = f.t / f.max;
-      g.globalAlpha = Math.max(0, 1 - k);
-      g.strokeStyle = g.fillStyle = f.color;
-      if (f.kind === 'ring') { g.lineWidth = 2; g.beginPath(); g.arc(f.x, f.y, f.r * (0.4 + 0.6 * k), 0, 7); g.stroke(); }
-      else if (f.kind === 'burst') { g.beginPath(); g.arc(f.x, f.y, f.r * k, 0, 7); g.fill(); }
-      else if (f.kind === 'beam') { g.lineWidth = 2; g.beginPath(); g.moveTo(f.x, f.y); g.lineTo(f.x2, f.y2); g.stroke(); }
-      else if (f.kind === 'flash') { g.globalAlpha = 0.25 * (1 - k); g.fillRect(0, 0, W, H); }
-    }
-    g.globalAlpha = 1; g.lineWidth = 1;
-
-    if (ui.kingTargeting) {
-      g.fillStyle = 'rgba(232,224,200,0.08)';
-      g.fillRect(0, 0, W, H);
-      if (ui.mouse) {
-        g.strokeStyle = '#e8e0c8';
-        g.beginPath(); g.arc(ui.mouse.x, ui.mouse.y, 30, 0, 7); g.stroke();
-      }
-    }
-
-    // screen-space overlays, laid out as if unzoomed so they stay put while panning
-    const f = this.fit * this.dpr;
-    g.setTransform(f, 0, 0, f, this.dpr * (this.cssW / 2) - (W / 2) * f, this.dpr * (this.cssH / 2) - (H / 2) * f);
-    if (world.boss && world.boss.alive) this.bossBar(world.boss);
-    if (world.chugT > 0 || world.hangoverT > 0) {
-      g.font = '700 14px Georgia, serif';
-      g.fillStyle = world.chugT > 0 ? '#ffd35a' : '#8aa';
-      g.fillText(world.chugT > 0 ? `CHUG! ${world.chugT.toFixed(1)}s` : `Hungover ${world.hangoverT.toFixed(1)}s`, 12, H - 12);
-    }
-  }
-
-  // ------------------------------------------------------------ pixel-art mode
-  drawPixel(world, ui, t) {
-    const g = this.g;
-    DISTRICTS.forEach((d, i) => {
+    // districts about to revolt pulse pink
+    world.map.districts.forEach((d, i) => {
       if (world.morale[i] < world.mods.moraleThreshold + 10) {
         const [x0, y0, x1, y1] = d.rect;
         g.fillStyle = `rgba(194,59,138,${0.08 + 0.05 * Math.sin(t * 3)})`;
         g.fillRect(x0 * TILE, y0 * TILE, (x1 - x0) * TILE, (y1 - y0) * TILE);
       }
     });
-    if (ui.placing) this.buildGrid(world);
+    if (world.timers.flood > 0) {
+      g.fillStyle = `rgba(110,170,220,${0.12 + 0.04 * Math.sin(t * 4)})`;
+      for (let i = 0; i < world.map.anyPath.length; i++) if (world.map.anyPath[i]) g.fillRect((i % COLS) * TILE, Math.floor(i / COLS) * TILE, TILE, TILE);
+    }
+    if (world.timers.hallowed > 0 && world.hallowed) {
+      g.fillStyle = 'rgba(255,240,170,0.12)'; g.beginPath(); g.arc(world.hallowed.x, world.hallowed.y, world.hallowed.r, 0, 7); g.fill();
+    }
+    if (ui.placing || ui.placingHero) this.buildGrid(world, ui.placing ? TOWERS[ui.placing].water : false);
+
+    for (const it of world.items) this.pixel ? px.drawItem(g, it, t) : this.dot(it.x, it.y, 6, ITEMS[it.type]?.color || '#aaa');
     for (const b of world.barricades) px.drawBarricade(g, b);
 
     const sel = ui.selected && world.towers.includes(ui.selected) ? ui.selected : null;
-    if (sel) this.rangeRing(sel.x, sel.y, sel.s, '#ffe08a');
-    if (ui.placing && ui.hover) {
-      const def = TOWERS[ui.placing];
-      const why = world.canPlace(ui.placing, ui.hover.tx, ui.hover.ty);
-      this.rangeRing((ui.hover.tx + 0.5) * TILE, (ui.hover.ty + 0.5) * TILE, { ...def.base, range: (def.base.range || 0) * (1 + world.mods.rangeMult) }, why ? '#ff5050' : '#7dff9a');
-    }
+    if (sel) this.rangeRing(sel, sel.s.kind === 'aura' || sel.s.auraRange ? '#ffd35a' : '#ffe08a');
 
-    // y-sorted towers and enemies for a 3/4 look
-    const list = this.drawList || (this.drawList = []);
+    const list = this.drawList;
     list.length = 0;
     for (const tw of world.towers) list.push(tw);
     for (const e of world.enemies) if (e.alive) list.push(e);
-    list.sort((a, b) => (a.def.base ? (a.ty + 1) * TILE : a.y + 12) - (b.def.base ? (b.ty + 1) * TILE : b.y + 12));
+    list.sort((a, b) => (a.tx != null ? (a.ty + 1) * TILE : a.y + 12) - (b.tx != null ? (b.ty + 1) * TILE : b.y + 12));
     for (const o of list) {
-      if (o.def.base) this.pixelTower(o, world, t, sel === o);
-      else px.drawEnemy(g, o, world, t, ui.hoverEnemy === o);
+      if (o.tx != null) this.tower(o, world, t, sel === o);
+      else if (this.pixel) px.drawEnemy(g, o, world, t, ui.hoverEnemy === o, true);
+      else this.dot(o.x, o.y, o.def.size, world.visible(o) ? '#d05050' : 'rgba(200,200,200,0.3)');
     }
     px.pruneEnemyMemory(t);
+    for (const tw of world.towers) if (tw.type === 'cloud' && this.pixel) px.drawPlane(g, tw, t);
 
-    if (ui.placing && ui.hover) {
-      const why = world.canPlace(ui.placing, ui.hover.tx, ui.hover.ty);
-      g.globalAlpha = 0.75;
-      px.drawTower(g, ui.placing, ui.hover.tx * TILE, ui.hover.ty * TILE, 0, null, t, { ghost: why ? 'rgba(255,60,60,0.45)' : null });
-      g.globalAlpha = 1;
-    }
+    this.placementGhost(world, ui, t);
 
-    for (const p of world.projectiles) px.drawProjectile(g, p, t);
+    for (const p of world.projectiles) this.pixel ? px.drawProjectile(g, p, t) : this.dot(p.x, p.y, 2, p.color || '#fff');
     for (const f of world.effects) px.drawEffect(g, f);
 
-    if (ui.kingTargeting) {
-      g.fillStyle = 'rgba(232,224,200,0.08)';
-      g.fillRect(0, 0, W, H);
-      if (ui.mouse) { g.globalAlpha = 0.7; px.drawBarricade(g, ui.mouse); g.globalAlpha = 1; }
-    }
-    this.labels(world);
+    // aim point for Mortar / Repeater
+    if (sel && (sel.s.kind === 'mortar' || sel.s.kind === 'repeater')) this.crosshair(sel.aim || (sel.s.kind === 'mortar' ? world.defaultAim() : null), ui.aiming === sel);
+    if (ui.aiming && ui.mouse) this.crosshair(ui.mouse, true);
+    // targeted ability or road item under the cursor
+    if (ui.targeting && ui.mouse) this.targetPreview(world, ui);
+
+    if (this.pixel) this.labels(world);
 
     const f = this.fit * this.dpr;
     g.setTransform(f, 0, 0, f, this.dpr * (this.cssW / 2) - (W / 2) * f, this.dpr * (this.cssH / 2) - (H / 2) * f);
-    px.vignette(g);
-    if (world.boss && world.boss.alive) this.bossBar(world.boss);
-    if (world.chugT > 0 || world.hangoverT > 0) {
-      g.font = '24px "Kenney Pixel", monospace';
-      g.fillStyle = world.chugT > 0 ? '#ffd35a' : '#9ab';
-      g.fillText(world.chugT > 0 ? `CHUG! ${world.chugT.toFixed(1)}s` : `Hungover ${world.hangoverT.toFixed(1)}s`, 12, H - 12);
-    }
+    if (this.pixel) px.vignette(g);
+    const boss = world.boss?.alive ? world.boss : world.enemies.find((e) => e.alive && e.boss);
+    if (boss) this.bossBar(boss);
+    this.timersText(world);
   }
 
-  pixelTower(tw, world, t, selected) {
+  tower(tw, world, t, selected) {
     const g = this.g;
     const x = tw.tx * TILE, y = tw.ty * TILE;
-    if (selected) {
-      g.strokeStyle = '#ffe08a'; g.lineWidth = 2;
-      g.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); g.lineWidth = 1;
-    }
+    if (selected) { g.strokeStyle = '#ffe08a'; g.lineWidth = 2; g.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4); g.lineWidth = 1; }
+    if (!this.pixel) { this.dot(tw.x, tw.y, 14, tw.hero ? '#ffd35a' : tw.def.color); return; }
     const dim = tw.disabledT > 0 || tw.turnedT > 0;
     if (dim) g.globalAlpha = 0.55;
-    px.drawTower(g, tw.type, x, y, tw.tier, tw.branch, t);
+    if (tw.hero) px.drawTower(g, 'hero', x, y, [0, 0], t, { heroId: tw.heroId, level: tw.level });
+    else px.drawTower(g, tw.type, x, y, tw.tiers, t);
     g.globalAlpha = 1;
-    if (tw.soberT > 0) { // sobered: blue "zZ"
-      g.fillStyle = '#9fd8ff';
-      const k = (t * 1.5) % 1;
-      g.font = '18px "Kenney Pixel", monospace';
-      g.fillText('z', x + 26, y - 4 - k * 8);
+    if (tw.soberT > 0) {
+      g.fillStyle = '#9fd8ff'; g.font = '18px "Kenney Pixel", monospace';
+      g.fillText('z', x + 26, y - 4 - ((t * 1.5) % 1) * 8);
     }
-    if (tw.disabledT > 0) { // sparks
+    if (tw.disabledT > 0) {
       g.fillStyle = '#ffb03d';
       for (let i = 0; i < 3; i++) g.fillRect(x + 8 + ((t * 40 + i * 11) % 24), y + 4 + ((i * 7 + t * 30) % 20), 3, 3);
     }
@@ -335,20 +185,75 @@ export class Renderer {
       g.strokeStyle = '#ff5fb0'; g.lineWidth = 2; g.setLineDash([4, 3]);
       g.beginPath(); g.arc(tw.x, tw.y, 22 + Math.sin(t * 8) * 2, 0, 7); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
     }
-    if (tw.plinketMarked && world.boss && world.boss.phase >= 2) {
-      g.fillStyle = '#ff5fb0'; g.fillRect(x + 30, y - 10, 5, 5);
+    if (tw.tonicT > 0) { g.fillStyle = '#6fe06f'; g.fillRect(x + 32, y + 30, 4, 4); }
+    // an ability is ready on this tower: a small pulsing star
+    if ((tw.s.abilities || []).some((a) => !(tw.abilityT['cd_' + a.id] > 0))) {
+      g.fillStyle = `rgba(255,211,90,${0.6 + 0.4 * Math.sin(t * 5)})`;
+      g.fillRect(x + 2, y - 2, 5, 5);
     }
-    if (tw.auraRate > 0 && tw.soberT <= 0 && !tw.s.aura) { g.fillStyle = '#ffd35a'; g.fillRect(x + 32, y + 30, 4, 4); }
   }
 
-  // faint build grid while placing, so buildable land reads clearly
-  buildGrid(world) {
+  placementGhost(world, ui, t) {
     const g = this.g;
-    g.strokeStyle = 'rgba(255,255,255,0.10)';
+    if (!ui.hover || !(ui.placing || ui.placingHero)) return;
+    const { tx, ty } = ui.hover;
+    const cx = (tx + 0.5) * TILE, cy = (ty + 0.5) * TILE;
+    let why, stats;
+    if (ui.placingHero) {
+      why = world.canPlaceHero(tx, ty);
+      const h = HEROES[world.heroId];
+      stats = { range: h.base.range, kind: h.base.kind, auraRange: h.base.auraRange };
+    } else {
+      why = world.canPlace(ui.placing, tx, ty);
+      stats = TOWERS[ui.placing].base;
+    }
+    this.rangeRing({ x: cx, y: cy, s: stats, eff: { range: (stats.range || 0) * (1 + world.mods.rangeMult) } }, why ? '#ff5050' : '#7dff9a');
+    if (!this.pixel) return;
+    g.globalAlpha = 0.75;
+    if (ui.placingHero) px.drawTower(g, 'hero', tx * TILE, ty * TILE, [0, 0], t, { heroId: world.heroId });
+    else px.drawTower(g, ui.placing, tx * TILE, ty * TILE, [0, 0], t, { ghost: why ? 'rgba(255,60,60,0.45)' : null });
+    g.globalAlpha = 1;
+  }
+
+  targetPreview(world, ui) {
+    const g = this.g;
+    const m = ui.mouse;
+    const tg = ui.targeting;
+    const p = world.nearestPathPoint(m.x, m.y);
+    const ok = p && p.dist <= (tg.kind === 'item' ? 26 : 40);
+    const at = ok ? p : m;
+    if (tg.kind === 'item') {
+      const it = ITEMS[tg.id];
+      g.globalAlpha = 0.7;
+      px.drawItem(g, { type: tg.id, x: at.x, y: at.y, hits: it.hits || 20, life: 12, radius: it.radius }, 0);
+      g.globalAlpha = 1;
+      if (it.blast) { g.strokeStyle = 'rgba(255,155,61,0.6)'; g.beginPath(); g.arc(at.x, at.y, it.blast, 0, 7); g.stroke(); }
+    } else {
+      g.globalAlpha = 0.7; px.drawBarricade(g, at); g.globalAlpha = 1;
+    }
+    g.strokeStyle = ok ? '#7dff9a' : '#ff5050';
+    g.setLineDash([4, 4]); g.beginPath(); g.arc(at.x, at.y, 22, 0, 7); g.stroke(); g.setLineDash([]);
+  }
+
+  crosshair(p, live) {
+    if (!p) return;
+    const g = this.g;
+    g.strokeStyle = live ? '#ffe08a' : 'rgba(255,90,90,0.9)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(p.x, p.y, 16, 0, 7);
+    g.moveTo(p.x - 24, p.y); g.lineTo(p.x - 8, p.y); g.moveTo(p.x + 8, p.y); g.lineTo(p.x + 24, p.y);
+    g.moveTo(p.x, p.y - 24); g.lineTo(p.x, p.y - 8); g.moveTo(p.x, p.y + 8); g.lineTo(p.x, p.y + 24);
+    g.stroke(); g.lineWidth = 1;
+  }
+
+  dot(x, y, r, c) { const g = this.g; g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+
+  buildGrid(world, water) {
+    const g = this.g;
+    g.strokeStyle = water ? 'rgba(160,220,255,0.25)' : 'rgba(255,255,255,0.10)';
     g.lineWidth = 1;
     g.beginPath();
     for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
-      if (world.map.buildable(tx, ty) && !world.towerAt(tx, ty)) g.rect(tx * TILE + 1.5, ty * TILE + 1.5, TILE - 3, TILE - 3);
+      if (world.map.buildable(tx, ty, water ? 'water' : 'land') && !world.towerAt(tx, ty)) g.rect(tx * TILE + 1.5, ty * TILE + 1.5, TILE - 3, TILE - 3);
     }
     g.stroke();
   }
@@ -357,7 +262,7 @@ export class Renderer {
     const g = this.g;
     g.font = '20px "Kenney Pixel", monospace';
     g.textBaseline = 'top';
-    for (const d of DISTRICTS) {
+    for (const d of world.map.districts) {
       const [x0, y0] = d.rect;
       const text = d.name.toUpperCase();
       g.fillStyle = 'rgba(20,12,8,0.55)';
@@ -368,92 +273,26 @@ export class Renderer {
     g.textBaseline = 'alphabetic';
   }
 
-  rangeRing(x, y, s, color) {
+  // o: a tower (or {x, y, s, eff}) — draws its reach
+  rangeRing(o, color) {
     const g = this.g;
-    if (s.attack === 'global') return;
+    const s = o.s;
+    if (s.kind === 'global' || s.kind === 'farm' || s.kind === 'mortar') return;
+    const r = o.eff?.range ?? s.range;
+    const ring = (rad, dash, alpha) => {
+      g.globalAlpha = alpha;
+      if (dash) g.setLineDash(dash);
+      g.beginPath(); g.arc(o.x, o.y, rad, 0, 7); g.stroke();
+      g.setLineDash([]);
+    };
     g.strokeStyle = color; g.fillStyle = color;
-    g.globalAlpha = 0.08; g.beginPath(); g.arc(x, y, s.range, 0, 7); g.fill();
-    g.globalAlpha = 0.5; g.stroke();
-    if (s.minRange) { g.setLineDash([4, 4]); g.beginPath(); g.arc(x, y, s.minRange, 0, 7); g.stroke(); g.setLineDash([]); }
-    if (s.aura) { g.globalAlpha = 0.35; g.setLineDash([2, 6]); g.beginPath(); g.arc(x, y, s.aura.range, 0, 7); g.stroke(); g.setLineDash([]); }
+    if (s.kind === 'orbit') { g.globalAlpha = 1; return; }
+    if (r && r < 2000) {
+      g.globalAlpha = 0.08; g.beginPath(); g.arc(o.x, o.y, r, 0, 7); g.fill();
+      ring(r, null, 0.5);
+    }
+    if (s.auraRange) ring(s.auraRange, [2, 6], 0.45);
     g.globalAlpha = 1;
-  }
-
-  towerBody(x, y, def, tier, branch, color) {
-    const g = this.g;
-    g.fillStyle = '#1c1712';
-    g.fillRect(x - 16, y - 16, 32, 32);
-    g.strokeStyle = color;
-    g.lineWidth = 2;
-    g.strokeRect(x - 15, y - 15, 30, 30);
-    g.lineWidth = 1;
-    g.fillStyle = color;
-    g.font = '700 16px Georgia, serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(def.glyph, x, y + 1);
-    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    for (let i = 0; i < tier; i++) {
-      g.fillStyle = branch === 0 ? '#ffd35a' : '#cfd8e0';
-      g.fillRect(x - 13 + i * 7, y + 10, 5, 4);
-    }
-  }
-
-  tower(tw, world, t) {
-    const g = this.g;
-    this.towerBody(tw.x, tw.y, tw.def, tw.tier, tw.branch, tw.def.color);
-    if (tw.soberT > 0) { g.fillStyle = 'rgba(160,220,255,0.28)'; g.fillRect(tw.x - 16, tw.y - 16, 32, 32); }
-    if (tw.disabledT > 0) {
-      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(tw.x - 16, tw.y - 16, 32, 32);
-      g.strokeStyle = '#ff9b3d'; g.beginPath();
-      g.moveTo(tw.x - 8, tw.y - 8); g.lineTo(tw.x + 8, tw.y + 8); g.moveTo(tw.x + 8, tw.y - 8); g.lineTo(tw.x - 8, tw.y + 8); g.stroke();
-    }
-    if (tw.turnedT > 0) {
-      g.strokeStyle = '#ff5fb0'; g.lineWidth = 2;
-      g.beginPath(); g.arc(tw.x, tw.y, 22 + Math.sin(t * 8) * 2, 0, 7); g.stroke(); g.lineWidth = 1;
-    }
-    if (tw.plinketMarked && world.boss && world.boss.phase >= 2) {
-      g.fillStyle = '#ff5fb0'; g.beginPath(); g.arc(tw.x + 12, tw.y - 12, 3, 0, 7); g.fill();
-    }
-    if (tw.auraRate > 0 && tw.soberT <= 0) { g.fillStyle = '#ffd35a'; g.fillRect(tw.x + 10, tw.y + 10, 4, 4); }
-  }
-
-  enemy(e, world, t) {
-    const g = this.g;
-    const def = e.def;
-    const vis = world.visible(e);
-    const r = def.size;
-    g.globalAlpha = vis ? 1 : 0.22 + 0.08 * Math.sin(t * 6 + e.uid);
-    if (def.boss && e.untargetable) g.globalAlpha = 0.75;
-    g.fillStyle = def.color;
-    g.strokeStyle = '#0b0906';
-    g.beginPath();
-    switch (def.shape) {
-      case 'tri': g.moveTo(e.x, e.y - r); g.lineTo(e.x + r, e.y + r * 0.8); g.lineTo(e.x - r, e.y + r * 0.8); break;
-      case 'square': g.rect(e.x - r * 0.8, e.y - r * 0.8, r * 1.6, r * 1.6); break;
-      case 'diamond': g.moveTo(e.x, e.y - r); g.lineTo(e.x + r, e.y); g.lineTo(e.x, e.y + r); g.lineTo(e.x - r, e.y); break;
-      case 'hex': for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; g.lineTo(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r); } break;
-      case 'star': for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, rr = k % 2 ? r * 0.45 : r; g.lineTo(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr); } break;
-      default: g.arc(e.x, e.y, r, 0, 7);
-    }
-    g.closePath(); g.fill(); g.stroke();
-    if (!vis) { g.setLineDash([2, 3]); g.strokeStyle = '#cfe0c0'; g.stroke(); g.setLineDash([]); }
-    g.globalAlpha = 1;
-    if (e.shield > 0) {
-      g.strokeStyle = '#6fb6ff'; g.lineWidth = 2;
-      g.beginPath(); g.arc(e.x, e.y, r + 4, 0, 7 * Math.min(1, e.shield / (e.maxShield || e.shield))); g.stroke(); g.lineWidth = 1;
-    }
-    if (e.burnT > 0) { g.fillStyle = '#ff7a2a'; g.fillRect(e.x - 2, e.y - r - 8 + Math.sin(t * 20) * 1.5, 4, 4); }
-    if (e.slowT > 0) { g.fillStyle = '#9fd8ff'; g.fillRect(e.x - r - 6, e.y - 2, 4, 4); }
-    if (e.markT > 0) { g.strokeStyle = '#ff4040'; g.strokeRect(e.x - r - 3, e.y - r - 3, 2 * r + 6, 2 * r + 6); }
-    if (e.stunT > 0 && !def.heavy) { g.fillStyle = '#fff'; g.fillRect(e.x + r, e.y - r, 3, 3); }
-    if (def.soberAura && vis) {
-      g.strokeStyle = 'rgba(240,240,255,0.12)'; g.beginPath(); g.arc(e.x, e.y, def.soberAura, 0, 7); g.stroke();
-    }
-    if (e.hp < e.maxHp && !def.boss) {
-      const w = Math.max(16, r * 2.2);
-      g.fillStyle = '#300'; g.fillRect(e.x - w / 2, e.y - r - 6, w, 3);
-      g.fillStyle = '#e44'; g.fillRect(e.x - w / 2, e.y - r - 6, w * (e.hp / e.maxHp), 3);
-    }
   }
 
   bossBar(b) {
@@ -461,11 +300,33 @@ export class Renderer {
     const w = 520, x = (W - w) / 2, y = 10;
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(x - 6, y - 4, w + 12, 34);
     g.font = this.pixel ? '22px "Kenney Pixel", monospace' : '700 13px Georgia, serif'; g.fillStyle = '#ff5fb0'; g.textAlign = 'center';
-    const title = b.phase === 1 ? 'MINISTER SUSAN PLINKET — "a moderate voice"' : b.phase === 2 ? 'J.R. UNMASKED' : 'SUSAN PLINKET, FOUNDER OF MAMA';
+    let title = ENEMIES[b.type].name.toUpperCase();
+    if (b.type === 'plinket') title = b.phase === 1 ? 'SUSAN PLINKET: CAN’T BE HIT YET — MARKS TOWERS SHE PASSES' : b.phase === 2 ? 'SUSAN PLINKET: SHIELDED — TURNS MARKED TOWERS' : 'SUSAN PLINKET: ENRAGED — SUMMONING';
     g.fillText(title, W / 2, y + 10);
     g.textAlign = 'left';
     g.fillStyle = '#300'; g.fillRect(x, y + 16, w, 8);
-    g.fillStyle = b.phase === 1 ? '#886' : '#ff5fb0'; g.fillRect(x, y + 16, w * (b.hp / b.maxHp), 8);
-    if (b.shield > 0) { g.fillStyle = '#6fb6ff'; g.fillRect(x, y + 16, w * (b.shield / b.maxShield), 4); }
+    g.fillStyle = b.untargetable ? '#886' : '#ff5fb0'; g.fillRect(x, y + 16, w * Math.max(0, b.hp / b.maxHp), 8);
+    if (b.shield > 0) { g.fillStyle = '#6fb6ff'; g.fillRect(x, y + 16, w * Math.min(1, b.shield / (b.maxShield || b.shield)), 4); }
+  }
+
+  timersText(world) {
+    const g = this.g;
+    const T = world.timers;
+    const parts = [];
+    if (T.chug > 0) parts.push(['#ffd35a', `CHUG! ${T.chug.toFixed(1)}s`]);
+    if (T.hangover > 0) parts.push(['#9ab', `Hungover ${T.hangover.toFixed(1)}s`]);
+    if (T.muster > 0) parts.push(['#ffd35a', `Muster ${T.muster.toFixed(1)}s`]);
+    if (T.longarm > 0) parts.push(['#ffd35a', `Long Arm ${T.longarm.toFixed(1)}s`]);
+    if (T.kegparty > 0) parts.push(['#ffd35a', `Keg Party ${T.kegparty.toFixed(1)}s`]);
+    if (T.sabotage > 0) parts.push(['#ff9b3d', `Sabotage ${T.sabotage.toFixed(1)}s`]);
+    if (T.faces > 0) parts.push(['#ff9b9b', `Faces remembered ${T.faces.toFixed(1)}s`]);
+    if (!parts.length) return;
+    g.font = this.pixel ? '24px "Kenney Pixel", monospace' : '700 14px Georgia, serif';
+    let x = 12;
+    for (const [c, s] of parts) {
+      g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillText(s, x + 2, H - 10);
+      g.fillStyle = c; g.fillText(s, x, H - 12);
+      x += g.measureText(s).width + 18;
+    }
   }
 }

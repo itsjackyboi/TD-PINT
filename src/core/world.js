@@ -238,6 +238,9 @@ export class World {
 
   towerAt(tx, ty) { return this.towerGrid.get(ty * COLS + tx) || null; }
 
+  // drawn normally (Hidden enemies are ghostly until revealed)
+  visible(e) { return !e.hidden || e.revealedT > 0 || this.revealAll > 0; }
+
   // ---------------------------------------------------------------- hero
   canPlaceHero(tx, ty) {
     if (!this.heroId) return 'none';

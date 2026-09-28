@@ -1,8 +1,7 @@
 // ?debug tuning panel: speed, resources, wave jumps, spawns, autoplay bot,
 // per-tower DPS, leak log and a stress test. Any cheat taints the run so it
-// isn't recorded in the Ledger.
+// isn't recorded in the profile or leaderboard.
 import { ENEMIES } from '../data/enemies.js';
-import { WAVES } from '../data/waves.js';
 import { Bot } from '../core/bot.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -48,28 +47,28 @@ export class Debug {
       case 'inv': w.invincible = !w.invincible; break;
       case 'kill': for (const e of w.enemies) if (e.alive && !e.def.boss) w.kill(e, null); break;
       case 'jump': {
-        const n = Math.max(1, Math.min(WAVES.length, Number(this.el.querySelector('#d-wave').value) || 1));
+        const n = Math.max(1, Math.min(500, Number(this.el.querySelector('#d-wave').value) || 1));
         w.enemies.length = 0; w.projectiles.length = 0; w.activeWaves.length = 0; w.pendingDoctrine = null; w.boss = null;
-        w.wave = n - 1; w.letter = w.makeLetter(n);
+        w.wave = n - 1;
         break;
       }
       case 'spawn': {
         const type = this.el.querySelector('#d-type').value;
         const count = Number(this.el.querySelector('#d-count').value) || 1;
-        for (let i = 0; i < count; i++) w.spawnEnemy(type, i % 2 ? 'B' : 'A', -i * 14, Math.max(1, w.wave), null);
+        for (let i = 0; i < count; i++) w.spawnEnemy(type, w.activePaths[i % w.activePaths.length], -i * 14, Math.max(1, w.wave), null);
         break;
       }
       case 'stress': {
         w.invincible = true;
         for (let i = 0; i < 300; i++) {
-          const e = w.spawnEnemy('zealot', i % 2 ? 'B' : 'A', -i * 4, 30, null);
+          const e = w.spawnEnemy('zealot', w.activePaths[i % w.activePaths.length], -i * 4, 30, null);
           e.hp = e.maxHp = 1e6;
         }
         break;
       }
       case 'bot':
         if (this.bot) this.bot = null;
-        else fetch('tools/builds/balanced.json').then((r) => r.json()).then((build) => { this.bot = new Bot(w, build); this.render(); });
+        else fetch(`tools/builds/${w.unlocks.tiers?.pike >= 4 ? 'veteran' : 'fresh'}.json`).then((r) => r.json()).then((build) => { this.bot = new Bot(w, build); this.render(); });
         break;
     }
     this.render();
@@ -88,8 +87,8 @@ export class Debug {
       <button data-d="gold">+1000g</button><button data-d="ale">+200 ale</button><button data-d="resolve">+10 resolve</button>
       <button data-d="inv">${w?.invincible ? 'invincible ON' : 'invincible off'}</button><button data-d="kill">kill all</button><br>
       wave <input id="d-wave" type="number" min="1" max="30" value="${(w?.wave || 0) + 1}" style="width:40px"><button data-d="jump">jump</button>
-      <button data-d="bot">${this.bot ? 'autoplay ON' : 'autoplay (balanced bot)'}</button><br>
-      <select id="d-type">${Object.keys(ENEMIES).filter((k) => k !== 'plinket').map((k) => `<option>${k}</option>`).join('')}</select>
+      <button data-d="bot">${this.bot ? 'autoplay ON' : 'autoplay (bot)'}</button><br>
+      <select id="d-type">${Object.keys(ENEMIES).map((k) => `<option>${k}</option>`).join('')}</select>
       ×<input id="d-count" type="number" value="5" style="width:36px"><button data-d="spawn">spawn</button>
       <button data-d="stress">stress 300</button>
       <div id="d-stats"></div>`;
@@ -118,7 +117,7 @@ export class Debug {
       }
       rows.sort((a, b) => b.dps - a.dps);
       html += '<table><tr><td>tower</td><td>tier</td><td>dps(10s)</td><td>total</td></tr>' +
-        rows.slice(0, 10).map((r) => `<tr><td>${r.t.type}@${r.t.tx},${r.t.ty}</td><td>${r.t.branch ?? '-'}/${r.t.tier}</td><td>${r.dps.toFixed(0)}</td><td>${Math.round(r.t.dmg)}</td></tr>`).join('') + '</table>';
+        rows.slice(0, 10).map((r) => `<tr><td>${r.t.type}@${r.t.tx},${r.t.ty}</td><td>${r.t.tiers ? r.t.tiers.join('-') : 'L' + r.t.level}</td><td>${r.dps.toFixed(0)}</td><td>${Math.round(r.t.dmg)}</td></tr>`).join('') + '</table>';
       html += '<div style="margin-top:4px">leaks:</div>' + w.leakLog.slice(-8).reverse().map((l) => `<div>w${l.wave} ${esc(l.type)} via ${l.path} (${l.hp}hp)</div>`).join('');
     }
     box.innerHTML = html;

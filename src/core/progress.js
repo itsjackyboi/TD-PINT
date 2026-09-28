@@ -5,7 +5,7 @@
 // - Upgrade tiers 3–4 of each tower need XP with that tower.
 // - Heroes unlock with milestones.
 import { TOWERS, TOWER_ORDER, TIER_XP } from '../data/towers.js';
-import { HERO_ORDER } from '../data/heroes.js';
+import { HEROES, HERO_ORDER } from '../data/heroes.js';
 import { MAP_ORDER } from '../data/maps.js';
 
 export const XP_PER_DAMAGE = 1 / 40;
@@ -98,7 +98,7 @@ export function describeUnlock(key) {
   const [kind, a, b] = key.split(':');
   if (kind === 'tower') return `New tower: ${TOWERS[a].name}`;
   if (kind === 'tier') return `${TOWERS[a].name}: tier ${b} upgrades`;
-  if (kind === 'hero') return `New hero: ${a}`;
+  if (kind === 'hero') return `New hero: ${HEROES[a].name}`;
   if (kind === 'mandates') return "Plinket's Mandates (extra-hard modifiers)";
   return key;
 }

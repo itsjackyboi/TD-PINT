@@ -1,32 +1,46 @@
-// DOM side panels, top bar and build bar. Panels rebuild on a short throttle and
-// use event delegation (data-act attributes), so rebuilding never loses handlers.
-import { TOWERS, TOWER_ORDER } from '../data/towers.js';
-import { KINGS } from '../data/kings.js';
-import { DISTRICTS } from '../core/map.js';
+// DOM side of the game screen: top bar, build bar (towers, hero, road items),
+// ability bar, toasts and the side panels. Panels rebuild on a short throttle
+// through setHTML (which only touches the DOM when content changed) and use
+// event delegation (data-act), so rebuilding never loses a tap.
+import { TOWERS, TOWER_ORDER, TIER_XP, DTYPE_TEXT } from '../data/towers.js';
+import { ENEMIES, TRAITS } from '../data/enemies.js';
+import { HEROES, HERO_COST, HERO_XP } from '../data/heroes.js';
+import { ITEMS, ITEM_ORDER, ITEMS_PER_WAVE } from '../data/items.js';
+import { DOCTRINES } from '../data/doctrines.js';
+import { wavePreview } from '../core/waves.js';
+import { towerStatus } from '../core/progress.js';
 import { sprites } from './sprites.js';
-import { towerIconURL, enemyPortraitURL } from './pixelart.js';
+import { towerIconURL, enemyPortraitURL, heroPortraitURL } from './pixelart.js';
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-// Only touch the DOM when content changed: rebuilding a button under a finger
-// mid-press would swallow the tap on touch screens.
-const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
+export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const setHTML = (el, html) => { if (el && el._html !== html) { el._html = html; el.innerHTML = html; } };
 const fmt = (n) => (Math.abs(n) >= 100 ? Math.round(n) : Math.round(n * 10) / 10);
+const n0 = (n) => Math.round(n).toLocaleString();
+
+export const ITEM_KEYS = { caltrops: 'c', powderkeg: 'v', stickyale: 'n' };
+export const ABILITY_KEYS = ['j', 'k', 'l', ';', "'"];
+const MODES = { first: 'First', last: 'Last', strong: 'Strong', close: 'Close' };
+
+export function traitChip(tr, withText = false) {
+  const T = TRAITS[tr];
+  if (!T) return '';
+  return `<span class="trait" style="--tc:${T.color}" title="${esc(T.name)}: ${esc(T.text)}"><i>${esc(T.icon)}</i>${esc(T.name)}</span>${withText ? ` <span class="ttext">${esc(T.text)}</span>` : ''}`;
+}
+
+export function speedWord(sp) { return sp >= 70 ? 'Fast' : sp >= 48 ? 'Normal' : sp >= 32 ? 'Slow' : 'Very slow'; }
 
 export class Hud {
   constructor(app) {
     this.app = app;
     this.touch = app.touch;
-    this.log = [];
     this.lastPanels = 0;
-    this.buildMorale();
+    this.toasts = [];
     this.setTab('info');
   }
 
-  // keyboard hint, hidden on touch devices
   key(s) { return this.touch ? '' : s; }
 
-  // touch drawer shows one panel at a time
   setTab(tab) {
     this.tab = tab;
     document.querySelectorAll('#side-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
@@ -34,42 +48,66 @@ export class Hud {
     this.lastPanels = 0;
   }
 
-  buildMorale() {
-    $('morale').innerHTML = DISTRICTS.map((d, i) =>
-      `<div class="mbar" title="${esc(d.name)} morale. Below the line, insurgents rise inside your defenses."><span id="m-name-${i}">${esc(d.name.split(' ').pop())}</span>
+  // --------------------------------------------------------------- one-off builds
+  start(world) {
+    this.world = world;
+    this.buildMorale(world);
+    this.buildBar(world);
+    $('toasts').innerHTML = '';
+    this.toasts = [];
+    this.lastPanels = 0;
+  }
+
+  buildMorale(world) {
+    $('morale').innerHTML = world.map.districts.map((d, i) =>
+      `<div class="mbar" title="${esc(d.name)} morale. Under the line, insurgents rise inside your defences."><span>${esc(d.name.split(' ').pop())}</span>
         <div class="track"><div class="fill" id="m-fill-${i}"></div><div class="thresh" id="m-th-${i}"></div></div></div>`).join('');
   }
 
+  // Towers you can use this run, then towers that unlock later this run; the
+  // hero; road items. Permanently locked towers are listed in Progress, not here.
   buildBar(world) {
-    $('buildbar').innerHTML = TOWER_ORDER.map((type) => {
+    const icon = (type) => (sprites.ready ? `<img class="ticon" alt="" src="${towerIconURL(type)}">` : '');
+    const towers = TOWER_ORDER.filter((t) => world.towerAvailable(t) || (TOWERS[t].unlock.wave && !world.towerAvailable(t)));
+    let html = towers.map((type) => {
       const def = TOWERS[type];
-      const locked = !world.towerUnlocked(type);
-      const icon = sprites.ready ? `<img class="ticon" alt="" src="${towerIconURL(type)}">` : '';
-      return `<button class="tb" data-act="build" data-type="${type}" id="tb-${type}" ${locked ? 'disabled title="Locked — see the Ledger"' : ''}>
-        ${icon}<span class="tlabel">${this.key(`<span class="key">[${def.key}]</span>`)}<span class="tname">${locked ? '🔒 ' : ''}${esc(def.name)}</span><span class="tshort">${locked ? '🔒 ' : ''}${esc(def.short)}</span>
-        <span class="tcost">${world.cost(def.cost)}g${def.aleCost ? ` + ${def.aleCost} ale` : ''}</span></span></button>`;
+      const soon = !world.towerAvailable(type);
+      return `<button class="tb ${soon ? 'soon' : ''}" data-act="build" data-type="${type}" id="tb-${type}" ${soon ? `disabled title="Unlocks at wave ${def.unlock.wave}"` : `title="${esc(def.desc)}"`}>
+        ${icon(type)}<span class="tlabel">${this.key(`<span class="key">${def.key}</span>`)}<span class="tname">${esc(def.short)}</span>
+        <span class="tcost">${soon ? `wave ${def.unlock.wave}` : `${world.cost(def.cost)}g`}</span></span></button>`;
     }).join('');
+    if (world.heroId && !world.hero) {
+      const h = HEROES[world.heroId];
+      const img = sprites.ready ? `<img class="ticon hero" alt="" src="${heroPortraitURL(world.heroId)}">` : '';
+      html = `<button class="tb herob" data-act="hero" id="tb-hero" title="${esc(h.desc)}">${img}<span class="tlabel">${this.key('<span class="key">h</span>')}<span class="tname">${esc(h.name.split(' ')[0])}</span><span class="tcost">${HERO_COST}g hero</span></span></button>` + html;
+    }
+    html += '<span class="bsep"></span>' + ITEM_ORDER.map((id) => {
+      const it = ITEMS[id];
+      return `<button class="tb item" data-act="item" data-id="${id}" id="ti-${id}" title="${esc(it.desc)}"><span class="tlabel">${this.key(`<span class="key">${ITEM_KEYS[id]}</span>`)}<span class="tname">${esc(it.name)}</span><span class="tcost ale">${it.ale} ale</span></span></button>`;
+    }).join('');
+    $('buildbar').innerHTML = html;
   }
 
-  pushLog(text, cls = '') {
-    this.log.unshift({ text, cls });
-    this.log.length = Math.min(this.log.length, 14);
-    this.renderLog();
+  toast(text, cls = '') {
+    const el = document.createElement('div');
+    el.className = `toast ${cls}`;
+    el.textContent = text;
+    $('toasts').prepend(el);
+    setTimeout(() => el.classList.add('out'), 3600);
+    setTimeout(() => el.remove(), 4200);
+    while ($('toasts').children.length > 4) $('toasts').lastChild.remove();
   }
 
-  renderLog() {
-    $('log').innerHTML = this.log.map((l) => `<div class="${l.cls}">${esc(l.text)}</div>`).join('');
-  }
-
-  // cheap per-frame numbers
+  // --------------------------------------------------------------- per frame
   tick(world, ui) {
     $('r-gold').textContent = Math.floor(world.gold);
     $('r-ale').textContent = Math.floor(world.ale);
     $('r-resolve').textContent = world.resolve;
-    $('r-wave').textContent = `${world.wave}/30`;
+    $('r-wave').textContent = world.freeplay ? `${world.wave} ∞` : `${world.wave}/${world.campaignWaves}`;
     const th = world.mods.moraleThreshold;
     world.morale.forEach((m, i) => {
       const f = $(`m-fill-${i}`);
+      if (!f) return;
       f.style.width = `${m}%`;
       f.className = 'fill' + (m < th ? ' bad' : m < th + 15 ? ' warn' : '');
       $(`m-th-${i}`).style.left = `${th}%`;
@@ -79,13 +117,21 @@ export class Hud {
     $('b-pause').classList.toggle('on', ui.paused);
     const send = $('b-send');
     send.disabled = !world.canSendWave();
-    send.textContent = world.activeWaves.length && world.canSendWave() ? 'Call Early' : 'Send Wave';
-    for (const type of TOWER_ORDER) {
-      const b = $(`tb-${type}`);
-      if (!b) continue;
-      b.classList.toggle('on', ui.placing === type);
-    }
+    const label = world.activeWaves.length && world.canSendWave() ? 'Call Early' : 'Send Wave';
+    if (send.textContent !== label) send.textContent = label;
 
+    for (const b of $('buildbar').children) {
+      if (b.dataset.type) {
+        const def = TOWERS[b.dataset.type];
+        const soon = !world.towerAvailable(b.dataset.type);
+        b.classList.toggle('on', ui.placing === b.dataset.type);
+        b.classList.toggle('poor', !soon && world.gold < world.cost(def.cost));
+      } else if (b.dataset.id) {
+        b.classList.toggle('on', ui.targeting?.kind === 'item' && ui.targeting.id === b.dataset.id);
+        b.disabled = !!world.canPlaceItem(b.dataset.id, -999, -999) && world.canPlaceItem(b.dataset.id, -999, -999) !== 'road';
+      } else if (b.id === 'tb-hero') b.classList.toggle('on', !!ui.placingHero);
+    }
+    this.abilityBar(world, ui);
     this.confirmBar(world, ui);
 
     const now = performance.now();
@@ -95,24 +141,52 @@ export class Hud {
     }
   }
 
+  abilityBar(world, ui) {
+    const list = world.abilityList();
+    const html = list.map(({ t, a }, i) => {
+      const owner = t.hero ? HEROES[t.heroId].name.split(' ')[0] : t.def.short;
+      return `<button class="ab" data-act="ability" data-tid="${t.id}" data-id="${a.id}" id="ab-${t.id}-${a.id}" title="${esc(owner)}: ${esc(a.name)}${a.desc ? ' — ' + esc(a.desc) : ''}">
+        <span class="abn">${this.key(`<span class="key">${ABILITY_KEYS[i] || ''}</span>`)}${esc(a.name)}</span><span class="abo">${esc(owner)}</span><span class="cd" id="abcd-${t.id}-${a.id}"></span></button>`;
+    }).join('');
+    setHTML($('abilities'), html);
+    for (const { t, a, cd } of list) {
+      const b = $(`ab-${t.id}-${a.id}`), c = $(`abcd-${t.id}-${a.id}`);
+      if (!b) continue;
+      const max = a.cd * world.mods.abilityCd;
+      b.disabled = cd > 0 || world.over;
+      b.classList.toggle('on', ui.targeting?.kind === 'ability' && ui.targeting.id === a.id && ui.targeting.t === t);
+      c.style.setProperty('--p', cd > 0 ? `${(cd / max) * 100}%` : '0%');
+      c.textContent = cd > 0 ? Math.ceil(cd) : '';
+    }
+  }
+
   confirmBar(world, ui) {
     const bar = $('confirm');
-    const show = this.touch && (ui.placing || ui.kingTargeting);
+    const show = this.touch && (ui.placing || ui.placingHero || ui.targeting || ui.aiming);
     bar.classList.toggle('hidden', !show);
     if (!show) return;
     let text, ok = false, label = '✓ Build';
-    if (ui.kingTargeting) {
-      label = '✓ Barricade';
+    if (ui.aiming) {
+      label = '✓ Target'; ok = !!ui.mouse;
+      text = ui.mouse ? 'Aim here? Tap again or ✓.' : `Tap where the ${ui.aiming.def.short} should aim.`;
+    } else if (ui.targeting) {
+      const tg = ui.targeting;
+      const name = tg.kind === 'item' ? ITEMS[tg.id].name : 'Barricade';
+      label = '✓ Place';
       ok = !!ui.mouse;
-      text = ui.mouse ? 'Barricade here? Tap again or ✓.' : "Tap the road for Jagerbauhm's barricade.";
+      text = ui.mouse ? `${name} here? Tap again or ✓.` : `Tap the road to place the ${name}.`;
+    } else if (ui.placingHero) {
+      label = '✓ Place';
+      if (!ui.hover) text = `Hero: ${HERO_COST}g. Tap open land to preview.`;
+      else { const why = world.canPlaceHero(ui.hover.tx, ui.hover.ty); ok = !why; text = why ? this.whyText(why) : 'Place your hero here? Tap again or ✓.'; }
     } else {
       const def = TOWERS[ui.placing];
-      const cost = `${world.cost(def.cost)}g${def.aleCost ? ` + ${def.aleCost} ale` : ''}`;
-      if (!ui.hover) text = `${def.short}: ${cost}. Tap open land to preview.`;
+      const cost = `${world.cost(def.cost)}g`;
+      if (!ui.hover) text = `${def.short}: ${cost}. Tap ${def.water ? 'open water' : 'open land'} to preview.`;
       else {
         const why = world.canPlace(ui.placing, ui.hover.tx, ui.hover.ty);
         ok = !why;
-        text = why ? { gold: 'Not enough gold.', ale: 'Not enough ale.', blocked: "Can't build there.", occupied: 'Already built there.', max: 'Maximum reached.', locked: 'Locked.' }[why] : `${def.short} here for ${cost}? Tap again or ✓.`;
+        text = why ? this.whyText(why) : `${def.short} here for ${cost}? Tap again or ✓.`;
       }
     }
     const t = $('confirm-text');
@@ -122,115 +196,233 @@ export class Hud {
     if (b.textContent !== label) b.textContent = label;
   }
 
+  whyText(why) {
+    return { gold: 'Not enough gold.', ale: 'Not enough ale.', blocked: 'Build on open land.', water: 'Ships go on open water.', occupied: 'Something is already there.', locked: 'Locked.', placed: 'Hero already placed.', road: 'Must go on the road.', limit: `Only ${ITEMS_PER_WAVE} road items per wave.` }[why] || "Can't do that.";
+  }
+
+  // --------------------------------------------------------------- panels
   panels(world, ui) {
     const p = world.incomePreview(world.wave + (world.activeWaves.length ? 0 : 1));
-    $('r-income').textContent = `${p.income + p.interest + p.springGold}g · ${p.ale} ale`;
-    $('r-income').title = `Tithes ${p.income} (scaled by average morale) + interest ${p.interest} (5% of banked gold, cap ${p.cap}) + spring ${p.springGold}`;
+    $('r-income').textContent = `${p.income + p.interest + p.towerGold}g`;
+    $('r-income').title = `Paid at the end of the wave: ${p.income} base (scaled by morale) + ${p.interest} interest (5% of banked gold, max ${p.cap}) + ${p.towerGold} from towers. Also +${p.ale} ale.`;
     setHTML($('p-info'), this.infoHtml(world, ui));
     const sel = ui.selected;
-    if (sel && $('t-dmg')) { $('t-dmg').textContent = Math.round(sel.dmg); $('t-kills').textContent = sel.kills; }
-    setHTML($('kings'), world.kings.map((id) => {
-      const k = KINGS[id], st = world.kingState[id];
-      const key = this.key(world.kings.indexOf(id) === 0 ? '[Q] ' : '[W] ');
-      const cd = st.cd > 0 ? ` (${Math.ceil(st.cd)}s)` : k.once && st.used ? ' (spent)' : '';
-      const on = ui.kingTargeting === id ? ' on' : '';
-      return `<div class="king"><button class="${on}" data-act="king" data-id="${id}" ${world.kingReady(id) ? '' : 'disabled'}>
-        ${key}<b>${esc(k.ability)}</b> — ${world.kingCost(id)} ale${cd}</button>
-        <div class="kdesc">${esc(k.name)}, “${esc(k.title)}”. ${esc(k.text)}</div></div>`;
-    }).join(''));
-    const q = world.bondQuote();
-    setHTML($('bonds'), `<div class="row"><span>+${q.principal}g now → repay <b>${q.due}g</b> after wave ${q.dueWave}</span></div>
-      <div class="muted" style="font-size:11px;margin:3px 0">${Math.round(q.rate * 100)}% interest, rising 15% per issue. Can't pay → default: every district −40 morale.</div>
-      <button data-act="bond" ${world.canIssueBond() ? '' : 'disabled'}>Issue Bond${this.key(' [B]')}</button>
-      ${world.bonds.length ? '<div style="margin-top:6px">' + world.bonds.map((b) => `<div class="row"><span>Due after wave ${b.dueWave}</span><b style="color:var(--red)">${b.due}g</b></div>`).join('') + '</div>' : ''}`);
-    const L = world.letter;
-    setHTML($('letter'), L
-      ? `<div class="muted" style="margin-bottom:4px">Re: wave ${L.wave}${L.verified ? `<span class="tag ${L.verified === 'AUTHENTIC' ? 'auth' : 'forged'}">${L.verified}</span>` : ''}</div>
-         <div class="ltext">${esc(L.text)}<div class="sig">${esc(L.sig)}</div></div>`
-      : '<div class="muted">No further letters. This is the end, one way or another.</div>');
+    if (sel && $('t-dmg')) { $('t-dmg').textContent = n0(sel.dmg); $('t-kills').textContent = sel.kills; }
+    if (ui.hoverEnemy?.alive && $('e-hp')) $('e-hp').textContent = `${Math.ceil(ui.hoverEnemy.hp)} / ${Math.ceil(ui.hoverEnemy.maxHp)}`;
+    setHTML($('p-hero-body'), this.heroHtml(world, ui));
+    setHTML($('p-econ-body'), this.econHtml(world));
   }
 
   infoHtml(world, ui) {
     const t = ui.selected && world.towers.includes(ui.selected) ? ui.selected : null;
-    if (t) return this.towerPanel(world, t);
+    if (t) return t.hero ? this.heroHtml(world, ui, true) : this.towerPanel(world, t);
+    if (ui.targeting?.kind === 'item') return this.itemInfo(world, ui.targeting.id);
     const type = ui.placing || ui.hoverBuild;
-    if (type) return this.towerInfo(world, type);
+    if (type && TOWERS[type]) return this.towerInfo(world, type);
     if (ui.hoverEnemy && ui.hoverEnemy.alive) return this.enemyInfo(world, ui.hoverEnemy);
-    if (this.touch) {
-      return `<h3>Orders</h3><div class="muted">Tap a tower in the bottom bar, then tap open land to preview it and tap again to build.
-        Tap a built tower to upgrade or sell it. Long-press an enemy to inspect it. Pinch or double-tap to zoom, drag to pan.</div>`;
-    }
-    return `<h3>Orders</h3><div class="muted">Select a tower below (<kbd>1</kbd>–<kbd>7</kbd>) and click the land to build.
-      Click a tower to upgrade it. <kbd>Space</kbd> sends the next wave, <kbd>P</kbd> pauses (you can build while paused),
-      <kbd>F</kbd> changes speed. Hover an enemy to inspect it.</div>`;
+    if (ui.inspectType) return this.enemyTypeInfo(ui.inspectType);
+    return this.waveInfo(world);
   }
 
-  statsHtml(world, s, t) {
+  waveInfo(world) {
+    const n = world.wave + (world.canSendWave() && !world.activeWaves.length ? 1 : world.activeWaves.length ? 0 : 1);
+    const next = world.canSendWave() ? world.wave + 1 : null;
+    const show = next || n;
+    if (!world.freeplay && show > world.campaignWaves) return '<h3>Waves</h3><div class="muted">Final wave under way.</div>';
+    const { counts, mods } = wavePreview(show, world.seed, world.waveOverride);
+    const rows = Object.entries(counts).map(([type, c]) => {
+      const d = ENEMIES[type];
+      const img = sprites.ready ? `<img class="eicon" alt="" src="${enemyPortraitURL(type)}">` : '';
+      return `<button class="erow" data-act="inspect" data-type="${type}">${img}<b>${c}× ${esc(d.name)}</b> ${d.traits.map((tr) => traitChip(tr)).join('')}</button>`;
+    }).join('');
+    const hint = this.touch ? 'Tap a tower in the bar, then tap the map. Tap an enemy to see what beats it.'
+      : 'Pick a tower below and click the map. Hover or click an enemy to see what beats it.';
+    return `<h3>${next ? `Next: wave ${next}` : `Wave ${show}`}${world.freeplay ? ' · Freeplay' : ''}</h3>
+      <div class="elist">${rows}</div>
+      ${mods.length ? `<div class="row wrap">Modifiers this wave: ${mods.map((m) => traitChip(m)).join('')}</div>` : ''}
+      <div class="muted small">${hint}</div>`;
+  }
+
+  // stat rows in plain words
+  statRows(s, eff, def) {
     const rows = [];
-    if (s.attack === 'global') rows.push(['Chime every', `${fmt(1 / s.rate)}s`], ['Slow', `${Math.round(s.slow * 100)}% for ${s.slowDur}s`]);
-    else {
-      if (s.dmg) rows.push(['Damage', fmt(s.dmg)]);
-      rows.push(['Rate', `${fmt(s.rate)}/s`], ['Range', Math.round(s.range)]);
-      if (s.dmg && s.attack !== 'pulse') rows.push(['DPS', fmt(s.dmg * s.rate)]);
+    const r = eff?.range ?? s.range;
+    const rate = eff?.rate ?? s.rate ?? 0;
+    const dmg = (s.dmg || 0) * (eff?.dmgMul ?? 1) + (eff?.dmgAdd ?? 0);
+    const k = s.kind;
+    if (k === 'farm') {
+      rows.push(['Pays per wave', `${s.income || 0} gold`]);
+      if (s.aleIncome) rows.push(['Ale per wave', s.aleIncome]);
+      if (s.interestCap) rows.push(['Interest cap', `+${s.interestCap}`]);
+      return rows;
     }
-    if (s.pierce) rows.push(['Armor pierce', s.pierce]);
-    if (s.splash) rows.push(['Splash', s.splash]);
+    if (k === 'aura') {
+      const a = s.aura || {};
+      rows.push(['Radius', Math.round(r)]);
+      if (a.rangeMul) rows.push(['Range bonus', `+${Math.round(a.rangeMul * 100)}%`]);
+      if (a.rate) rows.push(['Attack speed', `+${Math.round(a.rate * 100)}%`]);
+      if (a.detect) rows.push(['Grants', 'Hidden detection']);
+      if (a.discount) rows.push(['Discount', `${Math.round(a.discount * 100)}%`]);
+      if (a.shred) rows.push(['Grants', 'Shred']);
+      if (s.income) rows.push(['Pays per wave', `${s.income} gold`]);
+      return rows;
+    }
+    if (s.dtype) rows.push(['Damage type', DTYPE_TEXT[s.dtype] + (eff?.shred || s.shred ? ' + Shred' : '')]);
+    if (dmg) rows.push(['Damage', fmt(dmg) + (s.count > 1 ? ` × ${s.count}` : '')]);
+    if (rate) rows.push(['Attacks/sec', fmt(rate)]);
+    if (k === 'global') rows.push(['Reach', 'Whole map']);
+    else if (k === 'mortar') rows.push(['Reach', 'Anywhere (aim point)']);
+    else if (r) rows.push(['Range', Math.round(r)]);
+    if ((s.pierce || 1) > 1 || eff?.pierceAdd) rows.push(['Hits per shot', (s.pierce || 1) + (eff?.pierceAdd || 0)]);
+    if (s.splash) rows.push(['Blast radius', Math.round(s.splash)]);
+    if (s.slow) rows.push(['Slow', `${Math.round(s.slow * 100)}% for ${fmt(s.slowDur)}s`]);
+    if (s.freeze) rows.push(['Freeze', `${fmt(s.freeze)}s`]);
     if (s.burn) rows.push(['Burn', `${s.burn}/s for ${s.burnDur}s`]);
-    if (s.slow && s.attack !== 'global') rows.push(['Slow', `${Math.round(s.slow * 100)}%`]);
-    if (s.mark) rows.push(['Mark', `+${Math.round(s.mark * 100)}% dmg taken ×${s.marks}`]);
-    if (s.detect) rows.push(['Detects', 'Infiltrators']);
-    if (s.knockback) rows.push(['Knockback', `${s.knockback}px`]);
-    if (s.penetrate) rows.push(['Penetrates', s.penetrate]);
-    if (s.aura) rows.push(['Aura', `+${Math.round(s.aura.rate * 100)}% rate${s.aura.dmg ? `, +${Math.round(s.aura.dmg * 100)}% dmg` : ''}`]);
-    if (s.aleIncome) rows.push(['Ale / wave', `+${s.aleIncome}`]);
-    if (s.goldIncome) rows.push(['Gold / wave', `+${s.goldIncome}`]);
-    if (s.moraleCost) rows.push(['District morale', `−${s.moraleCost}/wave`]);
-    if (s.minRange) rows.push(['Min range', s.minRange]);
-    // live numbers go in spans updated by textContent so the panel's buttons aren't rebuilt
-    if (t) rows.push(['Damage dealt', '<span id="t-dmg"></span>'], ['Kills', '<span id="t-kills"></span>']);
+    if (s.acid) rows.push(['Acid', `${s.acid}/s on slowed enemies`]);
+    if (s.stun) rows.push(['Stun', `${s.stun}s`]);
+    if (s.mark) rows.push(['Marked targets take', `+${Math.round(s.mark * 100)}% damage`]);
+    if (s.income) rows.push(['Pays per wave', `${s.income} gold`]);
+    const armored = s.dtype && s.dtype !== 'sharp' && s.dtype !== 'none' ? 'Yes' : (eff?.shred || s.shred) ? 'Yes (Shred)' : s.dtype === 'none' ? '—' : 'No';
+    if (k !== 'global') {
+      rows.push(['Sees Hidden', eff?.detect || s.detect ? 'Yes' : 'No']);
+      if (s.dtype && s.dtype !== 'none') rows.push(['Hurts Armored', armored]);
+    }
+    if (def?.water) rows.push(['Placed on', 'Water']);
+    return rows;
+  }
+
+  statsHtml(rows) {
     return `<div class="stats">${rows.map(([a, b]) => `<span class="muted">${a}</span><span>${b}</span>`).join('')}</div>`;
   }
 
   towerInfo(world, type) {
     const def = TOWERS[type];
-    return `<h3>Build</h3><div class="row"><b>${esc(def.name)}</b><span style="color:var(--gold)">${world.cost(def.cost)}g${def.aleCost ? ` + ${def.aleCost} ale` : ''}</span></div>
-      <div class="flavor">${esc(def.flavor)}</div>${def.ale ? '<div class="muted">Ale tower: Temperance Matrons halve its fire rate.</div>' : ''}
-      ${def.max ? `<div class="muted">Max ${def.max}.</div>` : ''}
-      ${this.statsHtml(world, { ...def.base, range: (def.base.range || 0) * (1 + world.mods.rangeMult) })}
-      <div class="muted">Branches: ${def.branches.map((b) => esc(b.name)).join(' / ')}</div>`;
+    const s = { ...def.base };
+    return `<h3>Build</h3><div class="row"><b class="big">${esc(def.name)}</b><span class="gold">${world.cost(def.cost)}g</span></div>
+      <p class="desc">${esc(def.desc)}</p>
+      ${def.ale ? '<div class="muted small">Ale tower: Temperance Matrons make it fire at half speed.</div>' : ''}
+      ${this.statsHtml(this.statRows(s, { range: (s.range || 0) * (1 + world.mods.rangeMult) }, def))}
+      <div class="muted small">Upgrade paths: ${def.paths.map((p) => `<b>${esc(p.name)}</b>`).join(' / ')}</div>`;
   }
 
+  // BTD5 layout: two columns of four tiers
   towerPanel(world, t) {
     const def = t.def;
+    const xp = this.app.profile.towerXP[t.type] || 0;
     const status = [];
-    if (t.disabledT > 0) status.push(`<span style="color:#ff9b3d">Disabled ${Math.ceil(t.disabledT)}s</span>`);
-    if (t.soberT > 0) status.push('<span style="color:#9fd8ff">Sobered</span>');
-    if (t.turnedT > 0) status.push('<span style="color:var(--pink)">Turned by J.R.</span>');
-    const modes = def.base.attack === 'pulse' || def.base.attack === 'global' ? '' :
-      `<div class="modes">${['first', 'last', 'strong', 'close'].map((m) => `<button data-act="mode" data-mode="${m}" class="${t.mode === m ? 'on' : ''}">${m}</button>`).join('')}</div>`;
-    const branches = def.branches.map((b, i) => {
-      const lockedOut = t.branch != null && t.branch !== i;
-      const next = t.tier < 3 && !lockedOut ? b.tiers[t.tier] : null;
-      const c = next ? world.upgradeCost(t, i) : null;
-      const key = this.key(i === 0 ? '[Z] ' : '[X] ');
-      return `<div class="branch ${lockedOut ? 'locked' : ''}"><div class="bname">${esc(b.name)}</div>
-        <div class="muted" style="font-size:11px">${esc(b.flavor)}</div>
-        ${next ? `<button data-act="up" data-branch="${i}" ${world.gold >= c ? '' : 'disabled'}>${key}${esc(next.name)} — ${c}g</button>`
-          : `<div class="muted" style="font-size:11px;margin-top:4px">${lockedOut ? 'Other branch chosen' : 'Fully upgraded'}</div>`}</div>`;
+    if (t.disabledT > 0) status.push(`<span class="warn">Disabled ${Math.ceil(t.disabledT)}s</span>`);
+    if (t.soberT > 0) status.push('<span class="cold">Sobered</span>');
+    if (t.turnedT > 0) status.push('<span class="warn">Turned by Plinket</span>');
+    const noTarget = ['farm', 'aura', 'global', 'mortar', 'spikes', 'freeze', 'pulse', 'orbit', 'radial'].includes(t.s.kind);
+    const modes = noTarget ? '' : `<div class="modes">${Object.entries(MODES).map(([m, label]) => `<button data-act="mode" data-mode="${m}" class="${t.mode === m ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+    const aim = t.s.kind === 'mortar' || t.s.kind === 'repeater'
+      ? `<div class="row"><button data-act="aim" class="${this.app.ui.aiming === t ? 'on' : ''}">${t.aim ? 'Move target' : 'Set target'}</button>${t.aim ? '<button data-act="unaim">Auto-aim</button>' : ''}<span class="muted small">${t.s.kind === 'mortar' ? 'Shells land around the target.' : 'Fires toward the target.'}</span></div>`
+      : '';
+    const cols = def.paths.map((p, pi) => {
+      const have = t.tiers[pi];
+      const block = world.upgradeBlock(t, pi);
+      const rows = p.tiers.map((tier, ti) => {
+        const n = ti + 1;
+        if (n <= have) return `<div class="tier done"><span class="tn">✓ ${esc(tier.name)}</span><span class="td">${esc(tier.desc)}</span></div>`;
+        if (n === have + 1) {
+          if (block === 'crosspath') return `<div class="tier lock"><span class="tn">${esc(tier.name)}</span><span class="td">Closed: the other path is past tier 2. Only one path can go to tier 3–4.</span></div>`;
+          if (block === 'xp') {
+            const need = TIER_XP[n];
+            return `<div class="tier lock"><span class="tn">🔒 ${esc(tier.name)}</span><span class="td">${esc(tier.desc)}</span>
+              <span class="xpneed">Needs ${n0(need)} ${esc(def.short)} XP (${n0(Math.min(xp, need))} / ${n0(need)}). Earn XP by dealing damage with ${esc(def.short)}s in any game.</span>
+              <span class="xpbar"><i style="width:${Math.min(100, (xp / need) * 100)}%"></i></span></div>`;
+          }
+          const c = world.upgradeCost(t, pi);
+          return `<div class="tier next"><button data-act="up" data-path="${pi}" ${world.gold >= c ? '' : 'disabled'}>${this.key(pi === 0 ? '<span class="key">Z</span> ' : '<span class="key">X</span> ')}${esc(tier.name)} · ${c}g</button><span class="td">${esc(tier.desc)}</span></div>`;
+        }
+        const locked = n > world.tierCap(t.type);
+        return `<div class="tier later"><span class="tn">${locked ? '🔒 ' : ''}${esc(tier.name)}</span><span class="td">${esc(tier.desc)}</span></div>`;
+      }).join('');
+      return `<div class="path"><div class="pname">${esc(p.name)}</div>${rows}</div>`;
+    }).join('');
+    const abil = (t.s.abilities || []).map((a) => {
+      const cd = t.abilityT['cd_' + a.id] || 0;
+      return `<button data-act="ability" data-tid="${t.id}" data-id="${a.id}" ${cd > 0 ? 'disabled' : ''}>Use ${esc(a.name)}${cd > 0 ? ` (${Math.ceil(cd)}s)` : ''}</button>`;
     }).join('');
     return `<h3>${esc(def.name)}</h3>
-      <div class="row"><span>${t.branch != null ? esc(def.branches[t.branch].name) + ' · ' : ''}Tier ${t.tier}</span><span>${status.join(' ')}</span></div>
-      ${this.statsHtml(world, t.s, t)}${modes}<div class="branches">${branches}</div>
-      <div style="margin-top:8px"><button data-act="sell" ${world.mods.noSell ? 'disabled title="Old Aleforge Historic Act"' : ''}>Sell for ${world.sellValue(t)}g${this.key(' [S]')}</button></div>`;
+      <div class="row"><span class="muted small">${esc(def.desc)}</span></div>
+      ${status.length ? `<div class="row">${status.join(' ')}</div>` : ''}
+      ${this.statsHtml([...this.statRows(t.s, t.eff, def), ['Damage dealt', '<span id="t-dmg"></span>'], ['Kills', '<span id="t-kills"></span>']])}
+      ${modes}${aim}${abil ? `<div class="row wrap">${abil}</div>` : ''}
+      <div class="paths">${cols}</div>
+      <div class="row"><button data-act="sell" ${world.mods.noSell ? 'disabled' : ''}>Sell for ${world.sellValue(t)}g${this.key(' <span class="key">S</span>')}</button><span class="muted small">${esc(def.short)} XP: ${n0(xp)}</span></div>`;
   }
 
   enemyInfo(world, e) {
     const d = e.def;
-    const portrait = sprites.ready ? `<img alt="" src="${enemyPortraitURL(e.type)}" style="float:left;width:48px;height:48px;image-rendering:pixelated;margin:0 8px 4px 0">` : '';
-    return `<h3>MAMA</h3>${portrait}<div class="row"><b>${esc(d.name)}</b><span>${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)} hp</span></div>
-      <div class="flavor">${esc(d.desc)}</div>
-      <div class="stats"><span class="muted">Armor</span><span>${d.armor}</span><span class="muted">Speed</span><span>${d.speed}</span>
-      <span class="muted">Leak cost</span><span>${d.boss ? 'Everything' : d.leak + ' resolve'}</span><span class="muted">Shield</span><span>${Math.round(e.shield)}</span></div>`;
+    const portrait = sprites.ready ? `<img class="portrait" alt="" src="${enemyPortraitURL(e.type)}">` : '';
+    return `<h3>Enemy</h3>${portrait}<div class="row"><b class="big">${esc(d.name)}</b></div>
+      <div class="muted">${esc(d.desc)}</div>
+      <div class="stats"><span class="muted">Health</span><span id="e-hp">${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)}</span>
+        ${e.shield > 0 ? `<span class="muted">Shield</span><span>${Math.round(e.shield)}</span>` : ''}
+        <span class="muted">Speed</span><span>${speedWord(e.speed)}</span>
+        <span class="muted">If it gets through</span><span>${e.boss ? 'All your Resolve' : `−${d.leak + (e.traits.has('fortified') ? 1 : 0)} Resolve`}</span></div>
+      <div class="traits">${[...e.traits].map((tr) => `<div>${traitChip(tr, true)}</div>`).join('') || '<div class="muted">No special traits.</div>'}</div>`;
+  }
+
+  enemyTypeInfo(type) {
+    const d = ENEMIES[type];
+    const portrait = sprites.ready ? `<img class="portrait" alt="" src="${enemyPortraitURL(type)}">` : '';
+    return `<h3>Enemy</h3>${portrait}<div class="row"><b class="big">${esc(d.name)}</b></div>
+      <div class="muted">${esc(d.desc)}</div>
+      <div class="stats"><span class="muted">Speed</span><span>${speedWord(d.speed)}</span>
+        <span class="muted">If it gets through</span><span>${d.traits.includes('boss') ? 'All your Resolve' : `−${d.leak} Resolve`}</span></div>
+      <div class="traits">${d.traits.map((tr) => `<div>${traitChip(tr, true)}</div>`).join('') || '<div class="muted">No special traits.</div>'}</div>
+      <button data-act="uninspect">Back to wave</button>`;
+  }
+
+  itemInfo(world, id) {
+    const it = ITEMS[id];
+    return `<h3>Road item</h3><div class="row"><b class="big">${esc(it.name)}</b><span class="ale">${it.ale} ale</span></div>
+      <p class="desc">${esc(it.desc)}</p>
+      <div class="muted small">${this.touch ? 'Tap the road to place it.' : 'Click the road to place it.'} ${world.itemsThisWave}/${ITEMS_PER_WAVE} used this wave.</div>`;
+  }
+
+  heroHtml(world, ui, compact) {
+    if (!world.heroId) return '<div class="muted">No hero this run.</div>';
+    const h = HEROES[world.heroId];
+    const t = world.hero;
+    const img = sprites.ready ? `<img class="portrait" alt="" src="${heroPortraitURL(world.heroId)}">` : '';
+    const head = `${img}<div class="row"><b class="big">${esc(h.name)}</b>${t ? `<span>Level ${t.level}</span>` : ''}</div><div class="muted small">“${esc(h.title)}”</div><p class="desc">${esc(h.desc)}</p>`;
+    if (!t) {
+      return `${compact ? '<h3>Hero</h3>' : ''}${head}<button data-act="hero" class="${ui.placingHero ? 'on' : ''}">Place hero · ${HERO_COST}g${this.key(' <span class="key">H</span>')}</button>
+        <div class="muted small">Heroes level up (1–10) as they fight and as waves end. Abilities unlock at levels 3 and 7.</div>`;
+    }
+    const next = t.level < 10 ? HERO_XP[t.level] : null;
+    const prev = HERO_XP[t.level - 1] || 0;
+    const bar = next ? `<span class="xpbar"><i style="width:${Math.min(100, ((t.xp - prev) / (next - prev)) * 100)}%"></i></span>` : '<span class="muted small">Max level</span>';
+    const abil = h.abilities.map((a) => {
+      const ok = t.level >= a.level;
+      const cd = t.abilityT['cd_' + a.id] || 0;
+      return `<div class="tier ${ok ? 'next' : 'later'}"><span class="tn">${esc(a.name)} ${ok ? '' : `(level ${a.level})`}</span><span class="td">${esc(a.desc)} Cooldown ${a.cd}s.</span>
+        ${ok ? `<button data-act="ability" data-tid="${t.id}" data-id="${a.id}" ${cd > 0 ? 'disabled' : ''}>${cd > 0 ? `Ready in ${Math.ceil(cd)}s` : 'Use'}</button>` : ''}</div>`;
+    }).join('');
+    return `${compact ? '<h3>Hero</h3>' : ''}${head}${bar}${this.statsHtml(this.statRows(t.s, t.eff))}${abil}`;
+  }
+
+  econHtml(world) {
+    const q = world.bondQuote();
+    const p = world.incomePreview(world.wave + (world.activeWaves.length ? 0 : 1));
+    const bonds = `<div class="row"><span>Borrow ${q.principal}g now, repay <b>${q.due}g</b> after wave ${q.dueWave}</span></div>
+      <div class="muted small">${Math.round(q.rate * 100)}% interest; each bond costs more. If you can't repay: every district −40 morale.</div>
+      <button data-act="bond" ${world.canIssueBond() ? '' : 'disabled'}>Issue Bond${this.key(' <span class="key">B</span>')}</button>
+      ${world.bonds.map((b) => `<div class="row"><span>Due after wave ${b.dueWave}</span><b class="warn">${b.due}g</b></div>`).join('')}`;
+    const docs = world.doctrines.length
+      ? world.doctrines.map((id) => `<div><b>${esc(DOCTRINES[id].name)}</b> <span class="muted small">${esc(DOCTRINES[id].text)}</span></div>`).join('')
+      : '<div class="muted small">Every 5 waves you pick one of three doctrines. Each is a trade-off.</div>';
+    return `<div class="stats"><span class="muted">End-of-wave pay</span><span>${p.income}g</span><span class="muted">Interest (5%, max ${p.cap})</span><span>${p.interest}g</span>
+      <span class="muted">From towers</span><span>${p.towerGold}g</span><span class="muted">Ale per wave</span><span>${p.ale}</span></div>
+      <div class="muted small">Low morale cuts your pay. Under the line, insurgents rise inside your defences. Pamphleteers and leaks lower morale; each wave you hold raises it.</div>
+      <h3>Aleforge Bonds</h3>${bonds}<h3>Doctrines</h3>${docs}`;
   }
 }
 
+// Short text for the unlock lists (end screen, progress screen)
+export function towerUnlockText(profile, type) {
+  return towerStatus(profile, type).label;
+}

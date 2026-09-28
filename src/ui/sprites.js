@@ -46,6 +46,10 @@ export const ATLAS = {
   // flags (battle)
   flagRed: ['battle', 70], flagOrange: ['battle', 88], flagBlue: ['battle', 52], flagGreen: ['battle', 34], flagGrey: ['battle', 16],
   heart: ['battle', 195], lock: ['battle', 193],
+  // vehicles (battle): boats, planes, guns
+  boatSmall: ['battle', 103], boat: ['battle', 104], boatBig: ['battle', 105], boatOrange: ['battle', 176], boatOrangeBig: ['battle', 177],
+  plane: ['battle', 100], planeOrange: ['battle', 172], gunGrey: ['battle', 99], gunOrange: ['battle', 171], tankGrey: ['battle', 98],
+  soldierGrey: ['battle', 106], soldierOrange: ['battle', 178], watchTower: ['battle', 13], pineBattle: ['battle', 94],
   // characters (dungeon)
   wizard: ['dungeon', 84], villager: ['dungeon', 85], baldman: ['dungeon', 86], viking: ['dungeon', 87], redhead: ['dungeon', 88],
   knight: ['dungeon', 96], knightVisor: ['dungeon', 97], youth: ['dungeon', 98], woman: ['dungeon', 99], matron: ['dungeon', 100],

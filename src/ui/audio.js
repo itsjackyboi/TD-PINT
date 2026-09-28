@@ -62,6 +62,10 @@ class Sfx {
 export const sfx = new Sfx();
 
 // Watches a world each frame and plays sounds for what changed.
+// towers without their own sample borrow the nearest one; null = silent
+const SHOT = { hook: 'pike', scout: 'pike', spinner: 'pike', repeater: 'pike', cloud: 'pike', ship: 'keg', mortar: 'keg', cellar: 'light', witch: 'light',
+  caltrop: null, farm: null, garrison: null, proj: 'pike', beam: 'bow', pulse: 'pike' };
+
 export class SfxWatcher {
   constructor() { this.reset(null); }
 
@@ -83,7 +87,7 @@ export class SfxWatcher {
     // a tower fired when its cooldown jumped back up
     for (const t of world.towers) {
       const prev = this.cd.get(t);
-      if (prev !== undefined && t.cd > prev + 0.02) sfx.play('shot-' + t.type);
+      if (prev !== undefined && t.cd > prev + 0.02) { const n = SHOT[t.hero ? t.s.kind : t.type] ?? t.type; if (n) sfx.play('shot-' + n); }
       this.cd.set(t, t.cd);
     }
     for (const f of world.effects) {

@@ -1,11 +1,18 @@
-// Browser entry: fixed-timestep loop, input, and wiring between world, HUD and screens.
+// Browser entry: fixed-timestep loop, input, and wiring between the world,
+// HUD, screens, beginner tips, tutorial and leaderboard.
 import { World } from '../core/world.js';
-import { TILE, W, H } from '../core/map.js';
+import { TILE } from '../core/map.js';
 import { TOWERS, TOWER_ORDER } from '../data/towers.js';
+import { HEROES } from '../data/heroes.js';
+import { ITEM_ORDER } from '../data/items.js';
+import { runUnlocks, awardRun } from '../core/progress.js';
 import { Renderer } from './render.js';
-import { Hud } from './hud.js';
-import { loadMeta, recordRun, worldUnlocks } from './meta.js';
+import { Hud, ITEM_KEYS, ABILITY_KEYS } from './hud.js';
+import { loadProfile, saveProfile } from './profile.js';
+import { submitScore } from './leaderboard.js';
 import * as screens from './screens.js';
+import { Tips } from './tips.js';
+import { Tutorial, TUTORIAL_WAVES } from './tutorial.js';
 import { Gestures } from './touch.js';
 import { sprites } from './sprites.js';
 import { sfx, SfxWatcher } from './audio.js';
@@ -14,34 +21,34 @@ const STEP = 1 / 60;
 const MAX_STEPS = 24;
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-// touch UI: coarse pointer (phones/tablets) or forced with ?touch
 const TOUCH = params.has('touch') || matchMedia('(pointer: coarse)').matches;
+const MODES = ['first', 'last', 'strong', 'close'];
 
 class App {
   constructor() {
     this.canvas = $('game');
     this.renderer = new Renderer(this.canvas);
-    this.meta = loadMeta();
+    this.profile = loadProfile();
     this.debugMode = params.has('debug');
     this.speeds = this.debugMode ? [1, 2, 3, 5, 8] : [1, 2, 3];
     this.touch = TOUCH;
     document.body.classList.toggle('touch', TOUCH);
-    this.ui = { placing: null, selected: null, hover: null, mouse: null, hoverBuild: null, hoverEnemy: null, kingTargeting: null, speed: 1, paused: false, touch: TOUCH };
+    this.ui = this.freshUi();
     this.world = null;
-    this.backdrop = new World({ headless: true, seed: 1 });
-    this.backdrop.events.length = 0;
+    this.tutorial = null;
+    this.backdrop = new World({ headless: true, seed: 1, map: 'aleforge' });
     this.hud = new Hud(this);
+    this.tips = new Tips(this);
     this.acc = 0;
     this.last = performance.now();
     this.simMs = 0;
     this.debug = null;
     this.sfxWatch = new SfxWatcher();
     this.bindInput();
-    // art loads in the background; until then (or if it fails) the geometric renderer draws
     sprites.load().then(() => {
       document.body.classList.toggle('pixel', sprites.ready);
       if (this.world) this.hud.buildBar(this.world);
-      else if (sprites.ready && screens.isOpen() && !this.world) screens.titleScreen(this); // redraw with art
+      else if (sprites.ready && document.querySelector('#modal .title-screen')) screens.titleScreen(this);
     });
     document.fonts?.load('20px "Kenney Pixel"').catch(() => {});
     if (this.debugMode) import('./debug.js').then((m) => { this.debug = new m.Debug(this); if (this.world) this.debug.attach(this.world); });
@@ -49,22 +56,80 @@ class App {
     requestAnimationFrame((t) => this.frame(t));
   }
 
-  reloadMeta() { this.meta = loadMeta(); }
-
-  startRun(kings, mandates) {
-    const un = worldUnlocks(this.meta);
-    const seed = params.has('seed') ? Number(params.get('seed')) : undefined;
-    this.world = new World({ seed, kings, mandates, unlocks: { towers: un.towers, doctrines: un.doctrines } });
-    Object.assign(this.ui, { placing: null, selected: null, kingTargeting: null, hover: null, mouse: null, hoverEnemy: null, paused: false, speed: 1 });
-    this.renderer.resetView();
-    this.ended = false;
-    this.hud.log = [];
-    this.hud.renderLog();
-    this.hud.buildBar(this.world);
-    this.renderer.bg = null;
-    this.debug?.attach(this.world);
+  freshUi() {
+    return { placing: null, placingHero: false, targeting: null, aiming: null, selected: null, hover: null, mouse: null,
+      hoverBuild: null, hoverEnemy: null, inspectType: null, speed: this.ui?.speed || 1, paused: false, touch: TOUCH };
   }
 
+  // ------------------------------------------------------------------ runs
+  startRun(opts) {
+    this.lastRun = opts;
+    const un = runUnlocks(this.profile);
+    const seed = params.has('seed') ? Number(params.get('seed')) : undefined;
+    const hero = un.heroes.includes(opts.hero) ? opts.hero : un.heroes[0];
+    this.begin(new World({ seed, map: opts.map, hero, mandates: un.mandates ? opts.mandates || [] : [], unlocks: un }));
+  }
+
+  startTutorial() {
+    const un = { towers: ['pike', 'keg', 'bow', 'tap'], tiers: {}, heroes: ['seamus'] };
+    this.begin(new World({ seed: 7, map: 'cumstead', hero: 'seamus', unlocks: un, waves: TUTORIAL_WAVES, gold: 400 }));
+    this.tutorial = new Tutorial(this);
+  }
+
+  endTutorial(completed) {
+    this.tutorial?.close();
+    this.tutorial = null;
+    this.profile.tutorialDone = true;
+    saveProfile(this.profile);
+    this.world = null;
+    if (completed) {
+      this.showTip({ kicker: 'Tutorial complete', title: 'Ready for the siege',
+        html: '<p>That\'s the core of it. Every tower has two upgrade paths; tiers 3–4 unlock as you earn XP with that tower across games. New towers unlock along the way, some during each game and some for good.</p><p>Start on <b>Cumstead Fields</b> (Beginner). Clear wave 30 to win, then see how far Freeplay goes.</p>' },
+      () => screens.mapSelect(this));
+    } else screens.titleScreen(this);
+  }
+
+  begin(world) {
+    this.tutorial?.close();
+    this.tutorial = null;
+    this.world = world;
+    this.ui = this.freshUi();
+    this.ended = false;
+    this.tips.queue.length = 0;
+    this.renderer.resetView();
+    this.renderer.bg = null;
+    this.hud.start(world);
+    this.debug?.attach(world);
+    this.closeDrawer();
+    screens.hide();
+    // tips for the towers the player starts with come when they first pick one
+  }
+
+  continueFreeplay() {
+    const w = this.world;
+    if (w?.continueFreeplay()) { this.ended = false; this.hud.buildBar(w); }
+  }
+
+  // Record the result, send the score, show the end screen.
+  finishRun() {
+    const w = this.world;
+    if (!w || this.recorded === w) return;
+    this.recorded = w;
+    w.over = true;
+    const s = w.summary();
+    const tainted = this.debug?.tainted;
+    const result = tainted ? { xp: {}, unlocked: [] } : awardRun(this.profile, s);
+    saveProfile(this.profile);
+    if (tainted) { screens.endScreen(this, w, result, null); return; }
+    screens.endScreen(this, w, result, null);
+    submitScore(this.profile, s).then((lb) => { if (document.querySelector('#modal .bigwave')) screens.endScreen(this, w, result, lb); });
+  }
+
+  showTip(card, done) {
+    screens.tipCard(this, card, done);
+  }
+
+  // ------------------------------------------------------------------ loop
   frame(now) {
     requestAnimationFrame((t) => this.frame(t));
     const dt = Math.min(0.1, (now - this.last) / 1000);
@@ -79,6 +144,7 @@ class App {
         w.update(STEP);
         this.acc -= STEP;
         n++;
+        if (w.events.length) break; // handle events (tips pause) before simulating further
       }
       if (n >= MAX_STEPS) this.acc = 0;
       this.simMs = performance.now() - t0;
@@ -88,7 +154,9 @@ class App {
       this.handleEvents(w);
       this.renderer.draw(w, this.ui);
       this.hud.tick(w, this.ui);
+      this.tutorial?.tick(w);
       this.sfxWatch.tick(w);
+      $('paused').classList.toggle('hidden', !this.ui.paused || screens.isOpen());
     } else {
       this.renderer.draw(this.backdrop, this.ui);
     }
@@ -97,26 +165,38 @@ class App {
 
   handleEvents(w) {
     for (const ev of w.events) {
+      this.tutorial?.onEvent(ev);
       switch (ev.type) {
-        case 'bbl': this.hud.pushLog(ev.text, ev.text.startsWith('SUSAN') || ev.text.startsWith('MINISTER') ? 'warn' : 'bbl'); break;
-        case 'waveStart': this.banner(ev.text); this.hud.pushLog(ev.text); sfx.play('wave', 0); break;
+        case 'waveStart': this.banner(ev.text); sfx.play('wave', 0); break;
+        case 'waveEnd': sfx.play('coin', 0); break;
         case 'boss': this.banner(ev.text); sfx.play('boss', 0); break;
-        case 'doctrine': if (w.pendingDoctrine) { this.ui.placing = null; this.ui.kingTargeting = null; screens.doctrineScreen(this, w); sfx.play('doctrine', 0); } break;
-        case 'defeat': case 'victory': this.endRun(w); sfx.play(ev.type, 0); break;
-        case 'waveEnd': this.hud.pushLog(ev.text); sfx.play('coin', 0); break;
-        default: this.hud.pushLog(ev.text);
+        case 'unlock':
+          this.hud.buildBar(w);
+          this.hud.toast(ev.text, 'good');
+          if (ev.tower) this.tips.tower(ev.tower, 'unlock');
+          break;
+        case 'newEnemy': this.tips.enemy(ev.enemy, ev.traits || []); break;
+        case 'heroLevel': this.hud.toast(ev.text, 'good'); sfx.play('upgrade', 0); break;
+        case 'ability': sfx.play('king', 0); break;
+        case 'toast': this.hud.toast(ev.text, ev.warn ? 'warn' : ''); break;
+        case 'doctrine':
+          if (w.pendingDoctrine) { this.cancel(); screens.doctrineScreen(this, w); sfx.play('doctrine', 0); }
+          break;
+        case 'victory':
+          sfx.play('victory', 0);
+          if (this.tutorial) { this.endTutorial(true); break; }
+          this.banner('ALEFORGE STANDS');
+          setTimeout(() => { if (this.world === w && !w.freeplay) screens.victoryScreen(this, w); }, 1500);
+          break;
+        case 'defeat':
+          sfx.play('defeat', 0);
+          if (this.tutorial) { this.hud.toast('The keep fell. Try the tutorial again from the title screen.', 'warn'); setTimeout(() => this.endTutorial(false), 2500); break; }
+          this.banner(w.freeplay ? `FREEPLAY ENDS ON WAVE ${w.wave}` : 'THE KEEP HAS FALLEN');
+          setTimeout(() => { if (this.world === w) this.finishRun(); }, 1800);
+          break;
       }
     }
     w.events.length = 0;
-  }
-
-  endRun(w) {
-    if (this.ended) return;
-    this.ended = true;
-    this.banner(w.won ? 'ALEFORGE STANDS' : 'THE CASTLE HAS FALLEN');
-    // debug-assisted runs don't count toward the Ledger
-    const fresh = this.debug?.tainted ? [] : recordRun(this.meta, w.summary());
-    setTimeout(() => screens.endScreen(this, w, fresh), 1800);
   }
 
   banner(text) {
@@ -135,46 +215,46 @@ class App {
     let best = radius * radius, found = null;
     if (!w) return null;
     for (const e of w.enemies) {
-      const d = (e.x - p.x) ** 2 + (e.y - p.y) ** 2;
-      if (e.alive && d < best && w.visible(e)) { best = d; found = e; }
+      const d = (e.x - p.x) ** 2 + (e.y - p.y + 8) ** 2;
+      if (e.alive && d < best) { best = d; found = e; }
     }
     return found;
   }
 
-  // Tap/click on the map. Desktop acts immediately; touch previews first and
-  // confirms on a second tap of the same spot (or the ✓ button).
+  // Click / tap on the map. Desktop acts at once; touch previews first and
+  // confirms with a second tap on the same spot (or the ✓ button).
   tapMap(ev) {
     const w = this.world;
     if (!w) return;
     const p = this.toWorld(ev);
     const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
     const ui = this.ui;
-    if (ui.kingTargeting) {
-      const same = ui.mouse && Math.hypot(ui.mouse.x - p.x, ui.mouse.y - p.y) < 30;
-      if (this.touch && !same) { ui.mouse = p; return; }
-      this.confirmKing(this.touch ? ui.mouse : p);
+    const same = (a) => a && Math.hypot(a.x - p.x, a.y - p.y) < 30;
+    if (ui.aiming || ui.targeting) {
+      if (this.touch && !same(ui.mouse)) { ui.mouse = p; return; }
+      this.confirmPoint(this.touch ? ui.mouse : p);
       return;
     }
-    if (ui.placing) {
-      const same = ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
-      if (this.touch && !same) { ui.hover = { tx, ty }; return; }
+    if (ui.placing || ui.placingHero) {
+      const hit = ui.hover && ui.hover.tx === tx && ui.hover.ty === ty;
+      if (this.touch && !hit) { ui.hover = { tx, ty }; return; }
       this.confirmBuild(tx, ty, ev.shiftKey);
       return;
     }
-    const t = w.towerAt(tx, ty);
+    const t = w.towerAt(tx, ty) || w.towers.find((o) => o.type === 'cloud' && Math.hypot(o.x - p.x, o.y - p.y) < 24);
+    const e = this.enemyNear(p, this.touch ? 30 : 20);
+    if (e && (!t || this.touch)) { this.inspect(e); return; }
     if (t) {
-      ui.selected = t;
-      ui.hoverEnemy = null;
+      ui.selected = t; ui.hoverEnemy = null; ui.inspectType = null;
       if (this.touch) this.openDrawer('info');
+      sfx.play('click', 0);
+      this.hud.lastPanels = 0;
       return;
     }
-    ui.selected = null;
+    ui.selected = null; ui.hoverEnemy = null; ui.inspectType = null;
+    this.hud.lastPanels = 0;
     if (this.touch) {
-      const e = this.enemyNear(p, 26);
-      ui.hoverEnemy = e;
-      if (e) { this.openDrawer('info'); return; }
       this.closeDrawer();
-      // double-tap empty ground: toggle 2x zoom around the tap
       const now = performance.now();
       if (this.lastEmptyTap && now - this.lastEmptyTap.t < 320 && Math.hypot(ev.clientX - this.lastEmptyTap.x, ev.clientY - this.lastEmptyTap.y) < 40) {
         const r = this.renderer;
@@ -184,40 +264,66 @@ class App {
     }
   }
 
+  inspect(e) {
+    Object.assign(this.ui, { hoverEnemy: e, selected: null, inspectType: null, pinnedEnemy: true });
+    if (this.touch) this.openDrawer('info');
+    this.hud.lastPanels = 0;
+  }
+
   confirmBuild(tx, ty, keep = false) {
-    const w = this.world;
-    const why = w.canPlace(this.ui.placing, tx, ty);
+    const w = this.world, ui = this.ui;
+    if (ui.placingHero) {
+      const why = w.canPlaceHero(tx, ty);
+      if (!why) {
+        ui.selected = w.placeHero(tx, ty);
+        ui.placingHero = false; ui.hover = null;
+        sfx.play('build');
+        this.hud.buildBar(w);
+      } else { this.hud.toast(this.hud.whyText(why), 'warn'); sfx.play('error', 0); }
+      this.hud.lastPanels = 0;
+      return;
+    }
+    const why = w.canPlace(ui.placing, tx, ty);
     if (!why) {
-      const t = w.placeTower(this.ui.placing, tx, ty);
+      const t = w.placeTower(ui.placing, tx, ty);
       sfx.play('build');
-      if (!keep) { this.ui.placing = null; this.ui.selected = t; this.ui.hover = null; }
-    } else if (why === 'gold' || why === 'ale') { this.hud.pushLog(`Not enough ${why}.`, 'warn'); sfx.play('error', 0); }
-    else if (this.touch) this.hud.pushLog(why === 'occupied' ? 'Something is already built there.' : why === 'max' ? 'You have the maximum of those.' : 'You can only build on open land.', 'warn');
+      if (!keep) { ui.placing = null; ui.selected = t; ui.hover = null; }
+    } else { this.hud.toast(this.hud.whyText(why), 'warn'); sfx.play('error', 0); }
     this.hud.lastPanels = 0;
   }
 
-  confirmKing(p) {
+  // a point for a road item, a targeted ability (barricade) or a tower's aim
+  confirmPoint(p) {
+    const w = this.world, ui = this.ui;
     if (!p) return;
-    if (this.world.useKing(this.ui.kingTargeting, p)) { this.ui.kingTargeting = null; this.ui.mouse = null; sfx.play('king', 0); }
-    else this.hud.pushLog('The barricade must go on the road.', 'warn');
+    if (ui.aiming) {
+      ui.aiming.aim = { x: p.x, y: p.y };
+      ui.selected = ui.aiming; ui.aiming = null; ui.mouse = null;
+      sfx.play('click', 0);
+    } else if (ui.targeting.kind === 'item') {
+      const why = w.canPlaceItem(ui.targeting.id, p.x, p.y);
+      if (!why) { w.placeItem(ui.targeting.id, p.x, p.y); sfx.play('build'); ui.targeting = null; ui.mouse = null; }
+      else { this.hud.toast(this.hud.whyText(why), 'warn'); sfx.play('error', 0); if (why !== 'road') ui.targeting = null; }
+    } else {
+      const { t, id } = ui.targeting;
+      if (w.useAbility(t, id, p)) { ui.targeting = null; ui.mouse = null; }
+      else { this.hud.toast('That has to go on the road.', 'warn'); sfx.play('error', 0); }
+    }
     this.hud.lastPanels = 0;
   }
 
-  // the ✓ on the touch confirm bar
   confirmPending() {
     const ui = this.ui;
-    if (ui.kingTargeting) this.confirmKing(ui.mouse);
-    else if (ui.placing && ui.hover) this.confirmBuild(ui.hover.tx, ui.hover.ty);
+    if (ui.aiming || ui.targeting) this.confirmPoint(ui.mouse);
+    else if ((ui.placing || ui.placingHero) && ui.hover) this.confirmBuild(ui.hover.tx, ui.hover.ty);
   }
 
   longPressMap(ev) {
     const p = this.toWorld(ev);
-    const e = this.enemyNear(p, 34);
+    const e = this.enemyNear(p, 36);
     const t = this.world?.towerAt(Math.floor(p.x / TILE), Math.floor(p.y / TILE));
-    if (e) { this.ui.hoverEnemy = e; this.ui.selected = null; }
-    else if (t) this.ui.selected = t;
-    else return;
-    if (this.touch) this.openDrawer('info');
+    if (e) this.inspect(e);
+    else if (t) { this.ui.selected = t; if (this.touch) this.openDrawer('info'); }
     this.hud.lastPanels = 0;
   }
 
@@ -239,7 +345,7 @@ class App {
         const p = this.toWorld(ev);
         this.ui.mouse = p;
         this.ui.hover = { tx: Math.floor(p.x / TILE), ty: Math.floor(p.y / TILE) };
-        this.ui.hoverEnemy = this.enemyNear(p, 18);
+        if (!this.ui.pinnedEnemy || !this.ui.hoverEnemy?.alive) { this.ui.hoverEnemy = this.enemyNear(p, 18); this.ui.pinnedEnemy = false; }
       },
       leave: () => { if (!this.touch) { this.ui.hover = null; this.ui.mouse = null; } },
       pan: (dx, dy) => this.renderer.panBy(dx, dy),
@@ -250,7 +356,8 @@ class App {
     $('b-confirm').onclick = () => this.confirmPending();
     $('b-cancel').onclick = () => this.cancel();
     $('b-fit').onclick = () => this.renderer.resetView();
-    $('b-help').onclick = () => screens.helpScreen(this);
+    $('b-help').onclick = () => { if (this.world) screens.notesScreen(this); };
+    $('b-menu').onclick = () => { if (this.world) screens.pauseMenu(this); };
     $('b-drawer').onclick = () => document.body.classList.toggle('drawer-open');
     $('b-drawer-close').onclick = () => this.closeDrawer();
     const full = $('b-full');
@@ -270,65 +377,77 @@ class App {
       if (b) this.hud.setTab(b.dataset.tab);
     });
 
-    // a phone going to sleep or switching apps pauses the siege
     document.addEventListener('visibilitychange', () => { if (document.hidden && this.world) this.ui.paused = true; });
     window.addEventListener('pagehide', () => { if (this.world) this.ui.paused = true; });
-    // iOS Safari page pinch-zoom (outside the canvas)
     document.addEventListener('gesturestart', (e) => e.preventDefault());
 
     const unlock = () => sfx.unlock();
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     const mute = $('b-mute');
-    const syncMute = () => { mute.textContent = sfx.muted ? 'Muted' : 'Sound'; mute.classList.toggle('on', sfx.muted); };
+    const syncMute = () => { mute.textContent = sfx.muted ? '🔇' : '🔊'; mute.classList.toggle('on', sfx.muted); };
     mute.onclick = () => { sfx.setMuted(!sfx.muted); syncMute(); };
     syncMute();
     $('b-speed').onclick = () => this.cycleSpeed();
     $('b-pause').onclick = () => { this.ui.paused = !this.ui.paused; };
-    $('b-send').onclick = () => this.world?.sendWave();
+    $('paused').onclick = () => { this.ui.paused = false; };
+    $('b-send').onclick = () => this.sendWave();
 
     const delegate = (ev) => {
       const el = ev.target.closest('[data-act]');
       if (!el || el.disabled || !this.world) return;
       this.act(el.dataset.act, el.dataset);
     };
-    $('side').addEventListener('click', delegate);
-    $('buildbar').addEventListener('click', delegate);
+    for (const id of ['side', 'buildbar', 'abilities']) $(id).addEventListener('click', delegate);
     $('buildbar').addEventListener('mouseover', (ev) => {
       const el = ev.target.closest('[data-type]');
       this.ui.hoverBuild = el ? el.dataset.type : null;
     });
     $('buildbar').addEventListener('mouseleave', () => { this.ui.hoverBuild = null; });
 
-    window.addEventListener('keydown', (ev) => {
-      if (ev.target.tagName === 'INPUT') return;
-      if (screens.isOpen()) return;
-      const w = this.world;
-      if (!w) return;
-      const k = ev.key.toLowerCase();
-      const type = TOWER_ORDER.find((t) => TOWERS[t].key === k);
-      if (type) { this.act('build', { type }); return; }
-      switch (k) {
-        case ' ': ev.preventDefault(); w.sendWave(); break;
-        case 'p': this.ui.paused = !this.ui.paused; break;
-        case 'f': this.cycleSpeed(); break;
-        case 'escape': this.cancel(); break;
-        case 'z': this.act('up', { branch: '0' }); break;
-        case 'x': this.act('up', { branch: '1' }); break;
-        case 's': case 'delete': this.act('sell', {}); break;
-        case 't': this.cycleMode(); break;
-        case 'q': if (w.kings[0]) this.act('king', { id: w.kings[0] }); break;
-        case 'w': if (w.kings[1]) this.act('king', { id: w.kings[1] }); break;
-        case 'b': this.act('bond', {}); break;
-        case 'h': case '?': screens.helpScreen(this); break;
-        case 'm': $('b-mute').click(); break;
-      }
-    });
+    window.addEventListener('keydown', (ev) => this.key(ev));
+  }
+
+  key(ev) {
+    if (ev.target.tagName === 'INPUT' || ev.metaKey || ev.ctrlKey) return;
+    if (screens.isOpen()) {
+      if (ev.key === 'Escape' && this.world && !this.world.over && !this.world.pendingDoctrine && !this.tips.open) screens.hide();
+      return;
+    }
+    const w = this.world;
+    if (!w) return;
+    const k = ev.key.toLowerCase();
+    const type = TOWER_ORDER.find((t) => TOWERS[t].key === k);
+    if (type) { if (w.towerAvailable(type)) this.act('build', { type }); return; }
+    const item = ITEM_ORDER.find((id) => ITEM_KEYS[id] === k);
+    if (item) { this.act('item', { id: item }); return; }
+    const ai = ABILITY_KEYS.indexOf(k);
+    if (ai >= 0) { const a = w.abilityList()[ai]; if (a) this.act('ability', { tid: String(a.t.id), id: a.a.id }); return; }
+    switch (k) {
+      case ' ': ev.preventDefault(); this.sendWave(); break;
+      case 'p': this.ui.paused = !this.ui.paused; break;
+      case 'f': this.cycleSpeed(); break;
+      case 'escape': this.cancel(); break;
+      case 'z': this.act('up', { path: '0' }); break;
+      case 'x': this.act('up', { path: '1' }); break;
+      case 's': case 'delete': this.act('sell', {}); break;
+      case 'tab': ev.preventDefault(); this.cycleMode(); break;
+      case 'h': this.act('hero', {}); break;
+      case 'b': this.act('bond', {}); break;
+      case '?': screens.notesScreen(this); break;
+      case 'm': $('b-mute').click(); break;
+    }
+  }
+
+  sendWave() {
+    const w = this.world;
+    if (w?.sendWave()) this.hud.lastPanels = 0;
   }
 
   cancel() {
-    Object.assign(this.ui, { placing: null, kingTargeting: null, selected: null, hoverEnemy: null });
+    Object.assign(this.ui, { placing: null, placingHero: false, targeting: null, aiming: null, selected: null, hoverEnemy: null, inspectType: null, pinnedEnemy: false });
     if (this.touch) { this.ui.hover = null; this.ui.mouse = null; }
+    this.hud.lastPanels = 0;
   }
 
   cycleSpeed() {
@@ -338,41 +457,76 @@ class App {
 
   cycleMode() {
     const t = this.ui.selected;
-    if (!t) return;
-    const modes = ['first', 'last', 'strong', 'close'];
-    t.mode = modes[(modes.indexOf(t.mode) + 1) % modes.length];
+    if (!t || t.hero && t.s.kind === 'pulse') return;
+    t.mode = MODES[(MODES.indexOf(t.mode) + 1) % MODES.length];
+    this.hud.lastPanels = 0;
+  }
+
+  selectedTower() {
+    const t = this.ui.selected;
+    return t && this.world.towers.includes(t) ? t : null;
   }
 
   act(act, d) {
-    const w = this.world;
-    const t = this.ui.selected && w.towers.includes(this.ui.selected) ? this.ui.selected : null;
+    const w = this.world, ui = this.ui;
+    const t = this.selectedTower();
+    const clearModes = () => Object.assign(ui, { placing: null, placingHero: false, targeting: null, aiming: null });
     switch (act) {
-      case 'build':
-        if (!w.towerUnlocked(d.type)) return;
-        this.ui.placing = this.ui.placing === d.type ? null : d.type;
-        this.ui.selected = null;
-        this.ui.kingTargeting = null;
-        if (this.touch) { this.ui.hover = null; this.closeDrawer(); }
-        break;
-      case 'up': if (t) sfx.play(w.upgrade(t, Number(d.branch)) ? 'upgrade' : 'error', 0); break;
-      case 'sell': if (t && w.sell(t)) { this.ui.selected = null; sfx.play('sell'); } break;
-      case 'mode': if (t) { t.mode = d.mode; sfx.play('click'); } break;
-      case 'bond': if (w.issueBond()) sfx.play('bond'); break;
-      case 'king': {
-        const id = d.id;
-        if (!w.kingReady(id)) return;
-        if (id === 'jagerbauhm') {
-          this.ui.kingTargeting = this.ui.kingTargeting === id ? null : id;
-          this.ui.placing = null;
-          this.ui.mouse = null;
-          if (this.touch) this.closeDrawer();
-        }
-        else if (w.useKing(id)) sfx.play('king', 0);
+      case 'build': {
+        if (!w.towerAvailable(d.type)) return;
+        const was = ui.placing === d.type;
+        clearModes();
+        ui.placing = was ? null : d.type;
+        ui.selected = null; ui.inspectType = null;
+        if (this.touch) { ui.hover = null; this.closeDrawer(); }
+        if (!was) this.tips.tower(d.type);
+        sfx.play('click', 0);
         break;
       }
+      case 'hero': {
+        if (!w.heroId) return;
+        if (w.hero) { ui.selected = w.hero; if (this.touch) this.openDrawer('info'); break; }
+        const was = ui.placingHero;
+        clearModes();
+        ui.placingHero = !was; ui.selected = null;
+        if (this.touch) { ui.hover = null; this.closeDrawer(); }
+        if (!was) this.tips.hero(w.heroId);
+        break;
+      }
+      case 'item': {
+        const was = ui.targeting?.kind === 'item' && ui.targeting.id === d.id;
+        clearModes();
+        if (!was) { ui.targeting = { kind: 'item', id: d.id }; this.tips.item(d.id); }
+        ui.mouse = this.touch ? null : ui.mouse;
+        if (this.touch) this.closeDrawer();
+        break;
+      }
+      case 'ability': {
+        const owner = w.towers.find((o) => String(o.id) === d.tid);
+        if (!owner || !w.abilityReady(owner, d.id)) return;
+        const a = owner.s.abilities.find((x) => x.id === d.id);
+        if (a.targeted || d.id === 'barricade') {
+          clearModes();
+          ui.targeting = { kind: 'ability', id: d.id, t: owner };
+          ui.mouse = this.touch ? null : ui.mouse;
+          if (this.touch) this.closeDrawer();
+        } else if (!w.useAbility(owner, d.id)) sfx.play('error', 0);
+        break;
+      }
+      case 'up': if (t && !t.hero) { const ok = w.upgrade(t, Number(d.path)); sfx.play(ok ? 'upgrade' : 'error', 0); } break;
+      case 'sell': if (t && !t.hero && w.sell(t)) { ui.selected = null; sfx.play('sell'); } break;
+      case 'mode': if (t) { t.mode = d.mode; sfx.play('click', 0); } break;
+      case 'aim':
+        if (t) { clearModes(); ui.aiming = t; ui.mouse = this.touch ? null : ui.mouse; if (this.touch) this.closeDrawer(); }
+        break;
+      case 'unaim': if (t) t.aim = null; break;
+      case 'bond': if (w.issueBond()) sfx.play('bond'); break;
+      case 'inspect': ui.inspectType = d.type; ui.selected = null; break;
+      case 'uninspect': ui.inspectType = null; break;
     }
-    this.hud.lastPanels = 0; // refresh panels immediately
+    this.hud.lastPanels = 0;
   }
 }
 
 window.app = new App();
+export { HEROES };
